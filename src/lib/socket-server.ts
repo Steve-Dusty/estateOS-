@@ -2,12 +2,21 @@ import { Server as SocketIOServer } from 'socket.io';
 import { GraphData, GraphNode, GraphLink } from '@/types/graph';
 import { buildFullGraph } from './graph-builder';
 
-let io: SocketIOServer | null = null;
+// Use globalThis to share the Socket.IO instance between the custom server
+// (server.ts) and Next.js API routes (which run in a separate module context).
+declare global {
+  // eslint-disable-next-line no-var
+  var __socketIO: SocketIOServer | undefined;
+}
+
+function getIO(): SocketIOServer | null {
+  return globalThis.__socketIO || null;
+}
 
 export function initSocketServer(server: SocketIOServer): void {
-  io = server;
+  globalThis.__socketIO = server;
 
-  io.on('connection', (socket) => {
+  server.on('connection', (socket) => {
     console.log(`[socket] Client connected: ${socket.id}`);
 
     // Send full graph on connect
@@ -22,19 +31,19 @@ export function initSocketServer(server: SocketIOServer): void {
 }
 
 export function broadcastNodeAdded(node: GraphNode): void {
-  io?.emit('graph:node:added', { node });
+  getIO()?.emit('graph:node:added', { node });
 }
 
 export function broadcastNodeUpdated(node: GraphNode): void {
-  io?.emit('graph:node:updated', { node });
+  getIO()?.emit('graph:node:updated', { node });
 }
 
 export function broadcastLinkAdded(link: GraphLink): void {
-  io?.emit('graph:link:added', { link });
+  getIO()?.emit('graph:link:added', { link });
 }
 
 export function broadcastLinkUpdated(link: GraphLink): void {
-  io?.emit('graph:link:updated', { link });
+  getIO()?.emit('graph:link:updated', { link });
 }
 
 export function broadcastGraphDelta(delta: {
@@ -43,6 +52,11 @@ export function broadcastGraphDelta(delta: {
   newLinks: GraphLink[];
   updatedLinks: GraphLink[];
 }): void {
+  const io = getIO();
+  if (!io) {
+    console.warn('[socket] No Socket.IO instance — delta not broadcast');
+    return;
+  }
   for (const node of delta.newNodes) broadcastNodeAdded(node);
   for (const node of delta.updatedNodes) broadcastNodeUpdated(node);
   for (const link of delta.newLinks) broadcastLinkAdded(link);
@@ -56,9 +70,7 @@ export function broadcastConversation(event: {
   role: string;
   timestamp: string;
 }): void {
-  io?.emit('conversation:new', event);
+  getIO()?.emit('conversation:new', event);
 }
 
-export function getIO(): SocketIOServer | null {
-  return io;
-}
+export { getIO };
