@@ -1,26 +1,149 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-body: #F5F0EB;
+  --bg-surface: #FFFDF9;
+  --bg-muted: #EBE6E0;
+  --bg-elevated: #FAF7F3;
+  --bg-glass: rgba(255,253,249,0.85);
+
+  --accent: #0891B2;
+  --accent-dim: rgba(8,145,178,0.07);
+  --accent-glow: rgba(8,145,178,0.15);
+
+  --green: #059669;
+  --green-dim: rgba(5,150,105,0.07);
+  --amber: #D97706;
+  --amber-dim: rgba(217,119,6,0.07);
+  --red: #DC2626;
+  --red-dim: rgba(220,38,38,0.06);
+
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-tertiary: #94A3B8;
+
+  --border: rgba(0,0,0,0.07);
+  --border-active: rgba(8,145,178,0.4);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg-body: var(--bg-body);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-muted: var(--bg-muted);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-glass: var(--bg-glass);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-green: var(--green);
+  --color-green-dim: var(--green-dim);
+  --color-amber: var(--amber);
+  --color-amber-dim: var(--amber-dim);
+  --color-red: var(--red);
+  --color-red-dim: var(--red-dim);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-border: var(--border);
+  --color-border-active: var(--border-active);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: var(--bg-body);
+  color: var(--text-primary);
+  font-family: 'DM Sans', sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 0; }
+
+/* ── Glass ── */
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
 }
+
+/* ── Map markers ── */
+@keyframes m-breathe {
+  0%,100% { transform: translate(-50%,-50%) scale(1); }
+  50% { transform: translate(-50%,-50%) scale(1.1); }
+}
+@keyframes m-ring {
+  0% { transform: translate(-50%,-50%) scale(1); opacity: 0.5; }
+  100% { transform: translate(-50%,-50%) scale(3); opacity: 0; }
+}
+.map-marker { position:relative; width:16px; height:16px; cursor:pointer; }
+.map-marker .core {
+  position:absolute; top:50%; left:50%;
+  width:10px; height:10px;
+  background: var(--accent); border: 2px solid white;
+  transform: translate(-50%,-50%);
+  animation: m-breathe 3s ease-in-out infinite;
+  box-shadow: 0 1px 6px rgba(8,145,178,0.3), 0 1px 2px rgba(0,0,0,0.15);
+}
+.map-marker .ring {
+  position:absolute; top:50%; left:50%;
+  width:10px; height:10px;
+  border: 2px solid var(--accent);
+  transform: translate(-50%,-50%);
+  animation: m-ring 3s ease-out infinite;
+}
+.map-marker.status-pending .core { background:var(--amber); box-shadow: 0 1px 6px rgba(217,119,6,0.3), 0 1px 2px rgba(0,0,0,0.15); }
+.map-marker.status-pending .ring { border-color:var(--amber); }
+.map-marker.status-flagged .core { background:var(--red); box-shadow: 0 1px 6px rgba(220,38,38,0.3), 0 1px 2px rgba(0,0,0,0.15); }
+.map-marker.status-flagged .ring { border-color:var(--red); }
+
+/* ── Card ── */
+.prop-card {
+  transition: all 0.15s ease;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.prop-card:hover {
+  border-color: rgba(0,0,0,0.12);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.prop-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ── Mapbox popup ── */
+.mapboxgl-popup-content {
+  background: white !important;
+  border: 1px solid rgba(0,0,0,0.08) !important;
+  border-radius: 3px !important;
+  padding: 0 !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12) !important;
+  overflow: hidden;
+}
+.mapboxgl-popup-tip { border-top-color: white !important; }
+.mapboxgl-popup-close-button { color: rgba(0,0,0,0.3) !important; font-size:18px !important; padding:6px 10px !important; }
+.mapboxgl-popup-close-button:hover { color: rgba(0,0,0,0.6) !important; background:transparent !important; }
+.mapboxgl-popup { z-index: 50; }
+.mapboxgl-ctrl-bottom-left, .mapboxgl-ctrl-bottom-right { display: none !important; }
+
+/* ── Anim ── */
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(4px); }
+  to { opacity:1; transform:translateY(0); }
+}
+.fade-in { animation: fadeUp 0.25s ease-out forwards; opacity:0; }
+.d1{animation-delay:.02s}.d2{animation-delay:.04s}.d3{animation-delay:.06s}.d4{animation-delay:.08s}
+.d5{animation-delay:.10s}.d6{animation-delay:.12s}.d7{animation-delay:.14s}.d8{animation-delay:.16s}
+
+@keyframes modal-in {
+  from { opacity:0; transform:scale(0.97) translateY(6px); }
+  to { opacity:1; transform:scale(1) translateY(0); }
+}
+.modal-enter { animation: modal-in 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+@keyframes soft-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.status-live { animation: soft-pulse 2.5s ease-in-out infinite; }
+
+.font-mono { font-family: 'JetBrains Mono', monospace; }

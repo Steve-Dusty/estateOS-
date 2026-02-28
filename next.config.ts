@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  turbopack: {
+    resolveAlias: {
+      'mapbox-gl': 'mapbox-gl/dist/mapbox-gl.js',
+    },
+  },
 };
 
 export default nextConfig;
