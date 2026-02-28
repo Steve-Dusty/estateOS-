@@ -102,6 +102,7 @@ export default function WorldBuilderPage() {
   const loadedGroupRef = useRef<THREE.Object3D | null>(null);
   const gltfLoaderRef = useRef<GLTFLoaderType | null>(null);
   const animFrameRef = useRef<number>(0);
+  const autoGenerateRef = useRef(false);
 
   // Shared UI state
   const [prompt, setPrompt] = useState('');
@@ -219,6 +220,30 @@ export default function WorldBuilderPage() {
   useEffect(() => {
     if (logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
   }, [logs]);
+
+  // Load property seeded by Agent Copilot and auto-generate
+  // Works on fresh mount AND when already on the page (event-driven)
+  useEffect(() => {
+    const handleVABuild = () => {
+      try {
+        const pending = sessionStorage.getItem('va_pending_schematic');
+        if (!pending) return;
+        const { propertyImage } = JSON.parse(pending);
+        sessionStorage.removeItem('va_pending_schematic');
+        setMode('world');
+        // Fall back to first property if address matching didn't find one
+        const image = propertyImage ?? PROPERTIES[0].image;
+        setSelectedImage(image);
+        setEmptyState(false);
+        autoGenerateRef.current = true;
+      } catch { /* silent */ }
+    };
+
+    handleVABuild(); // run on mount in case we just navigated here
+    window.addEventListener('va-world-build', handleVABuild);
+    return () => window.removeEventListener('va-world-build', handleVABuild);
+  }, []);
+
 
   // Reset state on mode change
   const handleModeChange = useCallback((m: Mode) => {
@@ -380,6 +405,13 @@ export default function WorldBuilderPage() {
       setGenerating(false); setViewerOverlay(null); setEmptyState(true);
     }
   }, [selectedImage, connectSSE]);
+
+  // Fire world generation once selectedImage is ready (set by Agent Copilot)
+  useEffect(() => {
+    if (!autoGenerateRef.current || !selectedImage || generating) return;
+    autoGenerateRef.current = false;
+    startWorldGen();
+  }, [selectedImage, startWorldGen, generating]);
 
   const startVeoGen = useCallback(async () => {
     if (!selectedImage) return;

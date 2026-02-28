@@ -27,10 +27,11 @@ Given a user message, classify it into EXACTLY one of these intents:
 - "schematic": The user wants a floor plan, architectural schematic, property layout, building diagram, or any visual/spatial representation of a property.
 - "pdf_report": The user wants a comprehensive written report, market analysis, property valuation, investment analysis, CMA (Comparative Market Analysis), or any document-style output.
 - "email": The user wants to send an email to someone. They may specify a recipient, subject, and content.
+- "world_builder": The user wants to generate a 3D world, 3D scene, virtual tour, or immersive environment from a property image. Phrases like "generate world", "build world", "3D world", "create world", "virtual tour" map here.
 - "chat": General real estate questions, advice, conversational queries that need a text answer.
 
 Respond ONLY with a JSON object — no markdown, no explanation:
-{"intent": "schematic|pdf_report|email|chat", "subject": "brief description of what to generate"}`;
+{"intent": "schematic|pdf_report|email|world_builder|chat", "subject": "brief description of what to generate"}`;
 
 async function classifyIntent(
   message: string,
@@ -294,6 +295,8 @@ export async function POST(request: NextRequest) {
       result = await generatePdfReport(message);
     } else if (intent === 'email') {
       result = await sendEmail(message, '', lastPdfUrl, lastPdfFilename);
+    } else if (intent === 'world_builder') {
+      result = { type: 'text', message: `Launching 3D world generation for: ${subject}` };
     } else {
       result = await generateChatResponse(message, history);
     }
