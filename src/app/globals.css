@@ -147,3 +147,31 @@ html, body {
 .status-live { animation: soft-pulse 2.5s ease-in-out infinite; }
 
 .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ── Chat panel animations ── */
+@keyframes message-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.message-enter { animation: message-in 0.2s ease-out forwards; }
+
+@keyframes typing-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40%           { transform: translateY(-4px); opacity: 1; }
+}
+.typing-dot { display: inline-block; animation: typing-bounce 1.2s ease-in-out infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.30s; }
+
+@keyframes panel-slide-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.pdf-panel-enter { animation: panel-slide-in 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+@keyframes lightbox-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.lightbox-backdrop { animation: lightbox-in 0.15s ease-out forwards; }
+.lightbox-image    { animation: message-in 0.2s ease-out forwards; }

@@ -6,6 +6,7 @@ import NavBar from './components/NavBar';
 import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
 import PropertyModal from './components/PropertyModal';
+import ChatPanel from './components/ChatPanel';
 
 const MapView = dynamic(() => import('./components/MapView'), { ssr: false });
 import { Property } from './lib/properties';
@@ -13,6 +14,7 @@ import { Property } from './lib/properties';
 export default function Dashboard() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [modalProperty, setModalProperty] = useState<Property | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const handleSelectProperty = useCallback((property: Property) => {
     setSelectedProperty(property);
@@ -25,7 +27,7 @@ export default function Dashboard() {
 
   return (
     <div className="h-screen flex flex-col" style={{ background: 'var(--bg-body)' }}>
-      <NavBar />
+      <NavBar onAIToggle={() => setChatOpen(!chatOpen)} aiOpen={chatOpen} />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar
           selectedId={selectedProperty?.id ?? null}
@@ -42,6 +44,9 @@ export default function Dashboard() {
           property={modalProperty}
           onClose={() => setModalProperty(null)}
         />
+      )}
+      {chatOpen && (
+        <ChatPanel onClose={() => setChatOpen(false)} />
       )}
     </div>
   );
