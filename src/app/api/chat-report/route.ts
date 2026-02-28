@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { Composio } from '@composio/core';
 import { buildPdf } from '@/app/lib/pdf-builder';
+import { getDb } from '@/lib/db';
 
 export const maxDuration = 60;
 
@@ -193,16 +194,129 @@ async function generatePdfReport(message: string): Promise<object> {
   };
 }
 
+function queryKnowledgeGraph(message: string): string {
+  try {
+    const db = getDb();
+    const parts: string[] = [];
+
+    // Extract potential person names from the message (words that start with uppercase or the whole message)
+    const words = message.split(/\s+/).filter(w => w.length > 1);
+
+    for (const word of words) {
+      const clean = word.replace(/[^a-zA-Z]/g, '');
+      if (!clean) continue;
+
+      // Search persons by name or alias
+      const person = db.prepare(
+        'SELECT id, name, aliases, first_seen_at, last_seen_at, conversation_count FROM persons WHERE LOWER(name) LIKE LOWER(?)'
+      ).get(`%${clean}%`) as { id: number; name: string; aliases: string; first_seen_at: string; last_seen_at: string; conversation_count: number } | undefined;
+
+      if (!person) {
+        // Try alias search
+        const allPersons = db.prepare('SELECT id, name, aliases, first_seen_at, last_seen_at, conversation_count FROM persons').all() as { id: number; name: string; aliases: string; first_seen_at: string; last_seen_at: string; conversation_count: number }[];
+        const matched = allPersons.find(p => {
+          const aliases: string[] = JSON.parse(p.aliases);
+          return aliases.some(a => a.toLowerCase().includes(clean.toLowerCase()));
+        });
+        if (matched) {
+          addPersonContext(db, matched, parts);
+        }
+        continue;
+      }
+
+      addPersonContext(db, person, parts);
+    }
+
+    // Also search for topic matches
+    for (const word of words) {
+      const clean = word.replace(/[^a-zA-Z]/g, '');
+      if (!clean || clean.length < 3) continue;
+      const topics = db.prepare(
+        'SELECT id, name, category, mention_count FROM topics WHERE LOWER(name) LIKE LOWER(?) LIMIT 5'
+      ).all(`%${clean}%`) as { id: number; name: string; category: string | null; mention_count: number }[];
+      for (const topic of topics) {
+        // Find who discussed this topic
+        const discussers = db.prepare(`
+          SELECT p.name, pt.mention_count FROM person_topics pt
+          JOIN persons p ON p.id = pt.person_id
+          WHERE pt.topic_id = ? ORDER BY pt.mention_count DESC LIMIT 5
+        `).all(topic.id) as { name: string; mention_count: number }[];
+        if (discussers.length > 0) {
+          parts.push(`Topic "${topic.name}" (mentioned ${topic.mention_count}x) was discussed by: ${discussers.map(d => `${d.name} (${d.mention_count}x)`).join(', ')}`);
+        }
+      }
+    }
+
+    return parts.length > 0 ? parts.join('\n') : '';
+  } catch {
+    return '';
+  }
+}
+
+function addPersonContext(
+  db: ReturnType<typeof getDb>,
+  person: { id: number; name: string; aliases: string; first_seen_at: string; last_seen_at: string; conversation_count: number },
+  parts: string[],
+) {
+  const aliases: string[] = JSON.parse(person.aliases);
+  parts.push(`Person: ${person.name}${aliases.length ? ` (also known as: ${aliases.join(', ')})` : ''} — ${person.conversation_count} conversations, first seen ${person.first_seen_at}, last seen ${person.last_seen_at}`);
+
+  // Get their topics
+  const topics = db.prepare(`
+    SELECT t.name, pt.mention_count FROM person_topics pt
+    JOIN topics t ON t.id = pt.topic_id
+    WHERE pt.person_id = ? ORDER BY pt.mention_count DESC LIMIT 10
+  `).all(person.id) as { name: string; mention_count: number }[];
+  if (topics.length > 0) {
+    parts.push(`${person.name} discussed: ${topics.map(t => `${t.name} (${t.mention_count}x)`).join(', ')}`);
+  }
+
+  // Get their relationships
+  const rels = db.prepare(`
+    SELECT p.name, r.type, r.weight FROM relationships r
+    JOIN persons p ON p.id = r.target_person_id
+    WHERE r.source_person_id = ?
+    UNION ALL
+    SELECT p.name, r.type, r.weight FROM relationships r
+    JOIN persons p ON p.id = r.source_person_id
+    WHERE r.target_person_id = ?
+    ORDER BY weight DESC LIMIT 10
+  `).all(person.id, person.id) as { name: string; type: string; weight: number }[];
+  if (rels.length > 0) {
+    parts.push(`${person.name}'s connections: ${rels.map(r => `${r.name} (${r.type}, strength ${r.weight})`).join(', ')}`);
+  }
+
+  // Get recent conversations
+  const convos = db.prepare(`
+    SELECT role, content, timestamp FROM conversations
+    WHERE person_id = ? ORDER BY timestamp DESC LIMIT 15
+  `).all(person.id) as { role: string; content: string; timestamp: string }[];
+  if (convos.length > 0) {
+    parts.push(`Recent messages involving ${person.name}:`);
+    for (const c of convos.reverse()) {
+      parts.push(`  [${c.timestamp}] ${c.role}: ${c.content.slice(0, 200)}`);
+    }
+  }
+}
+
 async function generateChatResponse(message: string, history: HistoryItem[]): Promise<object> {
+  // Query the knowledge graph for relevant context
+  const kgContext = queryKnowledgeGraph(message);
+
+  let systemContent =
+    'You are EstateOS, a knowledgeable and precise real estate AI assistant. ' +
+    'Provide helpful, accurate, and concise answers about real estate topics. ' +
+    'You can help with property valuations, market trends, investment advice, ' +
+    'neighborhood analysis, and general real estate guidance.';
+
+  if (kgContext) {
+    systemContent += '\n\nYou have access to a knowledge graph of people, conversations, and topics from the user\'s real estate network. ' +
+      'Use the following context to answer questions about specific people, what they discussed, and their relationships:\n\n' +
+      kgContext;
+  }
+
   const messages: OpenAI.ChatCompletionMessageParam[] = [
-    {
-      role:    'system',
-      content:
-        'You are EstateOS, a knowledgeable and precise real estate AI assistant. ' +
-        'Provide helpful, accurate, and concise answers about real estate topics. ' +
-        'You can help with property valuations, market trends, investment advice, ' +
-        'neighborhood analysis, and general real estate guidance.',
-    },
+    { role: 'system', content: systemContent },
     ...history.slice(-10).map(h => ({
       role:    h.role as 'user' | 'assistant',
       content: h.content,
