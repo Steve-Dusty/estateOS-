@@ -103,54 +103,35 @@ async function spacePredictSSE(fnIndex: number, data: unknown[], maxRetries = 5)
 
 /* ── Main pipeline ─────────────────────────────────────────────────── */
 
-export async function runPipeline(prompt: string, jobId: string) {
+export async function runPipeline(imageBase64: string, jobId: string) {
   broadcastEvent(jobId, { type: 'info', message: `Job ${jobId} started` });
 
   const jobDir = path.join(RESULTS_DIR, jobId);
   await mkdir(jobDir, { recursive: true });
 
   try {
-    // ── Step 1: Text → Panorama ─────────────────────────────────────
-    broadcastEvent(jobId, { type: 'stage', stage: 'panorama', status: 'running' });
-    broadcastEvent(jobId, { type: 'log', stage: 'panorama', message: 'Calling HF Inference API (SDXL)…' });
+    // ── Step 1: Decode base64 image ─────────────────────────────────
+    broadcastEvent(jobId, { type: 'stage', stage: 'upload', status: 'running' });
+    broadcastEvent(jobId, { type: 'log', stage: 'upload', message: 'Processing uploaded image…' });
 
-    const panoramaPrompt = prompt + ', equirectangular panorama, 360 degree view, high quality, detailed';
+    // Strip data URL prefix if present (e.g. "data:image/jpeg;base64,...")
+    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+    const imageBuffer = Buffer.from(base64Data, 'base64');
 
-    const hfRes = await fetch(
-      'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${HF_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          inputs: panoramaPrompt,
-          parameters: { width: 2048, height: 1024 },
-        }),
-      },
-    );
+    const imagePath = path.join(jobDir, 'input.png');
+    await writeFile(imagePath, imageBuffer);
 
-    if (!hfRes.ok) {
-      const errText = await hfRes.text().catch(() => hfRes.status.toString());
-      throw new Error(`HF Inference API error ${hfRes.status}: ${errText}`);
-    }
+    const imageUrl = `/generated/${jobId}/input.png`;
+    broadcastEvent(jobId, { type: 'log', stage: 'upload', message: 'Image ready' });
+    broadcastEvent(jobId, { type: 'stage_done', stage: 'upload', panorama_url: imageUrl });
 
-    const panoramaBuffer = Buffer.from(await hfRes.arrayBuffer());
-    const panoramaPath = path.join(jobDir, 'panorama.png');
-    await writeFile(panoramaPath, panoramaBuffer);
-
-    const panoramaUrl = `/generated/${jobId}/panorama.png`;
-    broadcastEvent(jobId, { type: 'log', stage: 'panorama', message: 'Panorama generated successfully' });
-    broadcastEvent(jobId, { type: 'stage_done', stage: 'panorama', panorama_url: panoramaUrl });
-
-    // ── Step 2: Upload panorama to Gradio Space ─────────────────────
+    // ── Step 2: Upload image to Gradio Space ────────────────────────
     broadcastEvent(jobId, { type: 'stage', stage: 'world', status: 'running' });
-    broadcastEvent(jobId, { type: 'log', stage: 'world', message: 'Uploading panorama to HunyuanWorld…' });
+    broadcastEvent(jobId, { type: 'log', stage: 'world', message: 'Uploading image to HunyuanWorld…' });
 
     const formData = new FormData();
-    const blob = new Blob([panoramaBuffer], { type: 'image/png' });
-    formData.append('files', blob, 'panorama.png');
+    const blob = new Blob([imageBuffer], { type: 'image/png' });
+    formData.append('files', blob, 'input.png');
 
     const uploadRes = await fetch(`${SPACE_BASE}/gradio_api/upload`, {
       method: 'POST',
@@ -168,7 +149,7 @@ export async function runPipeline(prompt: string, jobId: string) {
     const fileData = {
       path: remotePath,
       url: `${SPACE_BASE}/gradio_api/file=${remotePath}`,
-      orig_name: 'panorama.png',
+      orig_name: 'input.png',
       mime_type: 'image/png',
       is_stream: false,
       meta: { _type: 'gradio.FileData' },
@@ -218,7 +199,7 @@ export async function runPipeline(prompt: string, jobId: string) {
     broadcastEvent(jobId, {
       type: 'done',
       job_id: jobId,
-      panorama_url: panoramaUrl,
+      panorama_url: imageUrl,
       model_url: modelUrl,
       scene_class: 'interior',
     });

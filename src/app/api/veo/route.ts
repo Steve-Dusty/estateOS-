@@ -8,22 +8,37 @@ const RESULTS_DIR = path.join(process.cwd(), 'public', 'generated');
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt } = await req.json() as {
+    const { prompt, imageBase64 } = await req.json() as {
       prompt?: string;
+      imageBase64?: string;
     };
 
-    if (!prompt?.trim()) {
-      return NextResponse.json({ error: 'Prompt cannot be empty' }, { status: 400 });
+    if (!imageBase64) {
+      return NextResponse.json({ error: 'Image is required' }, { status: 400 });
     }
 
     const jobId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const jobDir = path.join(RESULTS_DIR, jobId);
     await mkdir(jobDir, { recursive: true });
 
-    // Start video generation
+    // Extract raw base64 data and mime type
+    let mimeType = 'image/jpeg';
+    let rawBase64 = imageBase64;
+    if (imageBase64.includes(',')) {
+      const header = imageBase64.split(',')[0];
+      const mimeMatch = header.match(/data:(.*?);/);
+      if (mimeMatch) mimeType = mimeMatch[1];
+      rawBase64 = imageBase64.split(',')[1];
+    }
+
+    // Start video generation with image input
     let operation = await ai.models.generateVideos({
       model: 'veo-3.0-generate-001',
-      prompt: prompt.trim(),
+      prompt: prompt?.trim() || 'Cinematic real estate advertisement video of this property',
+      image: {
+        imageBytes: rawBase64,
+        mimeType,
+      },
       config: {
         aspectRatio: '16:9',
         numberOfVideos: 1,

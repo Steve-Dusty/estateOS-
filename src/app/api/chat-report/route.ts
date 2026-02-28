@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { Composio } from '@composio/core';
 import { buildPdf } from '@/app/lib/pdf-builder';
 
 export const maxDuration = 60;
@@ -25,10 +26,11 @@ const INTENT_SYSTEM = `You are an intent classifier for a real estate AI assista
 Given a user message, classify it into EXACTLY one of these intents:
 - "schematic": The user wants a floor plan, architectural schematic, property layout, building diagram, or any visual/spatial representation of a property.
 - "pdf_report": The user wants a comprehensive written report, market analysis, property valuation, investment analysis, CMA (Comparative Market Analysis), or any document-style output.
+- "email": The user wants to send an email to someone. They may specify a recipient, subject, and content.
 - "chat": General real estate questions, advice, conversational queries that need a text answer.
 
 Respond ONLY with a JSON object — no markdown, no explanation:
-{"intent": "schematic|pdf_report|chat", "subject": "brief description of what to generate"}`;
+{"intent": "schematic|pdf_report|email|chat", "subject": "brief description of what to generate"}`;
 
 async function classifyIntent(
   message: string,
@@ -218,16 +220,80 @@ async function generateChatResponse(message: string, history: HistoryItem[]): Pr
   return { type: 'text', message: resp.choices[0].message.content };
 }
 
+const composio = new Composio({ apiKey: process.env.COMPOSIO_API_KEY! });
+
+async function sendEmail(
+  message: string,
+  propertyContext: string,
+  lastPdfUrl?: string,
+  lastPdfFilename?: string,
+): Promise<object> {
+  // 1. Use GPT to extract email fields from user message
+  const extractionPrompt = `Extract the email details from this user message. The user may or may not provide all fields.
+If subject or body is not explicitly provided, generate appropriate ones based on the context.
+
+${propertyContext ? `Property context: ${propertyContext}` : ''}
+${lastPdfUrl ? `A PDF report is available: ${lastPdfFilename}` : ''}
+
+User message: ${message}
+
+Respond ONLY with JSON:
+{"to": "email@example.com", "subject": "Email subject", "body": "Email body in HTML format"}`;
+
+  const resp = await openai.chat.completions.create({
+    model: OPENAI_MODEL,
+    messages: [
+      { role: 'system', content: 'You are a helpful assistant that extracts email details and generates professional real estate emails. Always format the body as clean HTML with proper paragraphs.' },
+      { role: 'user', content: extractionPrompt },
+    ],
+    temperature: 0,
+    max_tokens: 800,
+  });
+
+  let raw = resp.choices[0].message.content?.trim() ?? '{}';
+  if (raw.startsWith('```')) {
+    raw = raw.split('```')[1];
+    if (raw.startsWith('json')) raw = raw.slice(4);
+  }
+  raw = raw.trim();
+
+  const { to, subject, body } = JSON.parse(raw);
+
+  if (!to) {
+    return { type: 'text', message: 'Could not determine the recipient email address. Please specify who to send the email to.' };
+  }
+
+  // 2. Send via Composio
+  const result = await composio.tools.execute('GMAIL_SEND_EMAIL', {
+    userId: 'default',
+    arguments: {
+      recipient_email: to,
+      subject: subject ?? 'Property Information from EstateOS',
+      body,
+      is_html: true,
+    },
+    dangerouslySkipVersionCheck: true,
+  });
+
+  if (result.data?.error) {
+    return { type: 'text', message: `Failed to send email: ${result.data.error}` };
+  }
+
+  return { type: 'text', message: `Email sent successfully to ${to}!\n\nSubject: ${subject}` };
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { message, history = [] } = await request.json();
-    const [intent, subject]         = await classifyIntent(message, history);
+    const { message, history = [], lastPdfUrl, lastPdfFilename } = await request.json();
+    const [intent, subject] = await classifyIntent(message, history);
 
     let result: object;
     if (intent === 'schematic') {
       result = await generateSchematic(subject);
     } else if (intent === 'pdf_report') {
       result = await generatePdfReport(message);
+    } else if (intent === 'email') {
+      result = await sendEmail(message, '', lastPdfUrl, lastPdfFilename);
     } else {
       result = await generateChatResponse(message, history);
     }

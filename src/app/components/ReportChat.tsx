@@ -51,6 +51,7 @@ const SUGGESTIONS = [
 const intentBadge: Record<string, { label: string; color: string; dimColor: string }> = {
   schematic:  { label: 'SCHEMATIC', color: 'var(--accent)', dimColor: 'var(--accent-dim)' },
   pdf_report: { label: 'PDF REPORT', color: 'var(--amber)', dimColor: 'var(--amber-dim)' },
+  email:      { label: 'EMAIL',      color: 'var(--green)',          dimColor: 'rgba(16,185,129,0.08)' },
   chat:       { label: 'INTEL',      color: 'var(--text-tertiary)', dimColor: 'rgba(100,116,139,0.08)' },
 };
 
@@ -345,10 +346,18 @@ export default function ReportChat({
       const contextPrefix = selectedProperty ? buildPropertyContext(selectedProperty) : '';
       const enrichedMessage = contextPrefix ? `${contextPrefix}\n\nUser message: ${trimmed}` : trimmed;
 
+      // Find the most recent PDF from conversation for potential email attachment
+      const lastPdf = [...messages].reverse().find(m => m.type === 'pdf' && m.pdfUrl);
+
       const res = await fetch('/api/chat-report', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: enrichedMessage, history }),
+        body:    JSON.stringify({
+          message: enrichedMessage,
+          history,
+          lastPdfUrl: lastPdf?.pdfUrl,
+          lastPdfFilename: lastPdf?.pdfFilename,
+        }),
       });
 
       if (!res.ok) {

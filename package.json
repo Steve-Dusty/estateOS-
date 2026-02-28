@@ -12,6 +12,7 @@
     "postinstall": "rm -rf node_modules/@types/mapbox__point-geometry"
   },
   "dependencies": {
+    "@composio/core": "^0.6.3",
     "@google/genai": "^1.43.0",
     "@google/generative-ai": "^0.24.1",
     "@mapbox/point-geometry": "^1.1.0",

@@ -7,13 +7,14 @@ const RESULTS_DIR = path.join(process.cwd(), 'public', 'generated');
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, portrait } = await req.json() as {
+    const { prompt, portrait, imageBase64 } = await req.json() as {
       prompt?: string;
       portrait?: boolean;
+      imageBase64?: string;
     };
 
-    if (!prompt?.trim()) {
-      return NextResponse.json({ error: 'Prompt cannot be empty' }, { status: 400 });
+    if (!imageBase64 && !prompt?.trim()) {
+      return NextResponse.json({ error: 'Image or prompt is required' }, { status: 400 });
     }
 
     if (!process.env.ODYSSEY_API_KEY) {
@@ -26,10 +27,18 @@ export async function POST(req: NextRequest) {
     const jobDir = path.join(RESULTS_DIR, jobId);
     await mkdir(jobDir, { recursive: true });
 
+    // Build start action with optional image
+    const startAction: { prompt: string; image?: string } = {
+      prompt: prompt?.trim() || 'Explore this property',
+    };
+    if (imageBase64) {
+      startAction.image = imageBase64;
+    }
+
     // Create simulation
     const job = await client.simulate({
       script: [
-        { timestamp_ms: 0, start: { prompt: prompt.trim() } },
+        { timestamp_ms: 0, start: startAction },
         { timestamp_ms: 8000, end: {} },
       ],
       portrait: portrait || false,

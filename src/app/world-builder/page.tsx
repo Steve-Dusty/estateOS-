@@ -6,6 +6,7 @@ import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/cont
 import type { GLTFLoader as GLTFLoaderType } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import NavBar from '../components/NavBar';
 import StatusBar from '../components/StatusBar';
+import { PROPERTIES, formatPrice } from '../lib/properties';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type OdysseyClient = any;
@@ -17,7 +18,7 @@ type Mode = 'world' | 'advert' | 'odyssey';
 type StageStatus = 'pending' | 'running' | 'done' | 'error';
 
 interface StageState {
-  panorama: StageStatus;
+  upload: StageStatus;
   world: StageStatus;
 }
 
@@ -60,37 +61,29 @@ const MODES: { key: Mode; label: string; badge: string; icon: React.ReactNode }[
   },
 ];
 
-const EXAMPLES: Record<Mode, { label: string; prompt: string }[]> = {
-  world: [
-    { label: 'Modern Living Room',  prompt: 'A modern minimalist living room with white walls, hardwood floors, a large sectional sofa, and floor-to-ceiling windows' },
-    { label: 'Rustic Kitchen',      prompt: 'A rustic kitchen with exposed brick, hanging copper pots, a butcher-block island, and natural light streaming through a skylight' },
-    { label: 'Cozy Bedroom',        prompt: 'A cozy bedroom with a canopy bed, warm amber lighting, built-in bookshelves, and a window seat overlooking a snowy garden' },
-    { label: 'Victorian Study',     prompt: 'A Victorian-era study with mahogany furniture, a globe, oil paintings, Persian rugs, and a crackling fireplace' },
-  ],
-  advert: [
-    { label: 'Luxury Condo Tour',       prompt: 'Cinematic aerial flythrough of a luxury high-rise condo with panoramic ocean views, modern interiors, and golden hour lighting' },
-    { label: 'Suburban Family Home',     prompt: 'Warm walkthrough of a suburban family home with a manicured lawn, open-concept kitchen, and kids playing in the backyard' },
-    { label: 'Downtown Loft',           prompt: 'Stylish real estate ad for an industrial downtown loft with exposed brick, large windows, and city skyline views at night' },
-    { label: 'Beachfront Villa',        prompt: 'Drone shot of a beachfront villa with infinity pool, tropical gardens, and turquoise ocean, cinematic color grading' },
-  ],
-  odyssey: [
-    { label: 'Neighborhood Walk',    prompt: 'Walking through a quiet suburban neighborhood with tree-lined streets, craftsman-style homes, and warm afternoon light' },
-    { label: 'Penthouse Rooftop',    prompt: 'Standing on a modern penthouse rooftop terrace overlooking a sprawling city at sunset, with sleek furniture and ambient lighting' },
-    { label: 'Historic District',    prompt: 'Exploring a charming historic district with cobblestone streets, Victorian row houses, and autumn foliage' },
-    { label: 'Future Smart City',    prompt: 'Walking through a futuristic smart city with autonomous vehicles, vertical gardens, and holographic signage' },
-  ],
-};
-
-const PLACEHOLDERS: Record<Mode, string> = {
-  world: 'A cozy living room with a stone fireplace, bookshelves, and large windows overlooking a garden…',
-  advert: 'Cinematic drone shot of a luxury beachfront property with infinity pool at golden hour…',
-  odyssey: 'Walking through a serene Japanese garden courtyard with koi ponds and cherry blossoms…',
-};
+const AD_EXAMPLES: { label: string; prompt: string }[] = [
+  { label: 'Luxury Condo Tour',       prompt: 'Cinematic aerial flythrough of a luxury high-rise condo with panoramic ocean views, modern interiors, and golden hour lighting' },
+  { label: 'Suburban Family Home',     prompt: 'Warm walkthrough of a suburban family home with a manicured lawn, open-concept kitchen, and kids playing in the backyard' },
+  { label: 'Downtown Loft',           prompt: 'Stylish real estate ad for an industrial downtown loft with exposed brick, large windows, and city skyline views at night' },
+  { label: 'Beachfront Villa',        prompt: 'Drone shot of a beachfront villa with infinity pool, tropical gardens, and turquoise ocean, cinematic color grading' },
+];
 
 const STAGE_META: Record<string, { label: string; icon: Record<StageStatus, string> }> = {
-  panorama: { label: 'Generating panorama', icon: { pending: '○', running: '●', done: '✓', error: '✗' } },
-  world:    { label: 'Building 3D world',   icon: { pending: '○', running: '●', done: '✓', error: '✗' } },
+  upload:   { label: 'Uploading image',   icon: { pending: '○', running: '●', done: '✓', error: '✗' } },
+  world:    { label: 'Building 3D world', icon: { pending: '○', running: '●', done: '✓', error: '✗' } },
 };
+
+/* ── Helper: URL → base64 data URL ── */
+async function urlToBase64(url: string): Promise<string> {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 /* ── Component ──────────────────────────────────────────────────────── */
 
@@ -112,13 +105,14 @@ export default function WorldBuilderPage() {
 
   // Shared UI state
   const [prompt, setPrompt] = useState('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [emptyState, setEmptyState] = useState(true);
   const [viewerOverlay, setViewerOverlay] = useState<string | null>(null);
 
   // World builder state
   const [showProgress, setShowProgress] = useState(false);
-  const [stages, setStages] = useState<StageState>({ panorama: 'pending', world: 'pending' });
+  const [stages, setStages] = useState<StageState>({ upload: 'pending', world: 'pending' } as StageState);
   const [logs, setLogs] = useState<string[]>([]);
   const [panoramaUrl, setPanoramaUrl] = useState<string | null>(null);
   const [sceneInfo, setSceneInfo] = useState<string | null>(null);
@@ -239,12 +233,13 @@ export default function WorldBuilderPage() {
     }
     setMode(m);
     setPrompt('');
+    setSelectedImage(null);
     setGenerating(false);
     setEmptyState(true);
     setViewerOverlay(null);
     setShowProgress(false);
     setLogs([]);
-    setStages({ panorama: 'pending', world: 'pending' });
+    setStages({ upload: 'pending', world: 'pending' } as StageState);
     setPanoramaUrl(null);
     setSceneInfo(null);
     setVideoUrl(null);
@@ -341,11 +336,11 @@ export default function WorldBuilderPage() {
           if (ev.type === 'stage') setStages(p => ({ ...p, [ev.stage as string]: 'running' as StageStatus }));
           if (ev.type === 'stage_done') {
             setStages(p => ({ ...p, [ev.stage as string]: 'done' as StageStatus }));
-            if (ev.stage === 'panorama' && ev.panorama_url) setPanoramaUrl(ev.panorama_url as string);
+            if (ev.stage === 'upload' && ev.panorama_url) setPanoramaUrl(ev.panorama_url as string);
           }
           if (ev.type === 'error') {
             setLogs(p => [...p, 'ERROR: ' + ev.message]);
-            setStages({ panorama: 'error', world: 'error' });
+            setStages({ upload: 'error', world: 'error' });
             setGenerating(false);
             setViewerOverlay(null);
             setEmptyState(true);
@@ -365,38 +360,40 @@ export default function WorldBuilderPage() {
   // ── Generation handlers ─────────────────────────────────────────────
 
   const startWorldGen = useCallback(async () => {
-    const trimmed = prompt.trim();
-    if (!trimmed) return;
+    if (!selectedImage) return;
     setGenerating(true);
     setShowProgress(true);
     setLogs([]);
-    setStages({ panorama: 'pending', world: 'pending' });
+    setStages({ upload: 'pending', world: 'pending' } as StageState);
     setPanoramaUrl(null);
     setSceneInfo(null);
     setEmptyState(false);
-    setViewerOverlay('Waiting for pipeline…');
+    setViewerOverlay('Preparing image…');
     try {
-      const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: trimmed }) });
+      const imageBase64 = await urlToBase64(selectedImage);
+      setViewerOverlay('Waiting for pipeline…');
+      const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imageBase64 }) });
       if (!r.ok) throw new Error((await r.json()).error || r.statusText);
       const res = await r.json();
       connectSSE(res.job_id as string);
     } catch {
       setGenerating(false); setViewerOverlay(null); setEmptyState(true);
     }
-  }, [prompt, connectSSE]);
+  }, [selectedImage, connectSSE]);
 
   const startVeoGen = useCallback(async () => {
-    const trimmed = prompt.trim();
-    if (!trimmed) return;
+    if (!selectedImage) return;
     setGenerating(true);
     setEmptyState(false);
     setVideoUrl(null);
-    setViewerOverlay('Generating advertisement video… This may take 1–3 minutes.');
+    setViewerOverlay('Preparing image…');
     try {
+      const imageBase64 = await urlToBase64(selectedImage);
+      setViewerOverlay('Generating advertisement video… This may take 1–3 minutes.');
       const r = await fetch('/api/veo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: trimmed }),
+        body: JSON.stringify({ prompt: prompt.trim() || undefined, imageBase64 }),
       });
       if (!r.ok) throw new Error((await r.json()).error || r.statusText);
       const res = await r.json();
@@ -409,20 +406,26 @@ export default function WorldBuilderPage() {
     } finally {
       setGenerating(false);
     }
-  }, [prompt]);
+  }, [selectedImage, prompt]);
 
   // ── Odyssey interactive stream ──────────────────────────────────────
 
   const odysseyConnect = useCallback(async () => {
-    const trimmed = prompt.trim();
-    if (!trimmed) return;
+    if (!selectedImage) return;
 
     setGenerating(true);
     setEmptyState(false);
     setOdysseyStatus('connecting');
-    setViewerOverlay('Connecting to Odyssey…');
+    setViewerOverlay('Preparing image…');
 
     try {
+      // Convert image URL to a Blob/File for the Odyssey SDK
+      const imgRes = await fetch(selectedImage);
+      const imgBlob = await imgRes.blob();
+      const imgFile = new File([imgBlob], 'property.jpg', { type: imgBlob.type });
+
+      setViewerOverlay('Connecting to Odyssey…');
+
       const { Odyssey } = await import('@odysseyml/odyssey');
       const client = new Odyssey({ apiKey: process.env.NEXT_PUBLIC_ODYSSEY_API_KEY || '' });
       odysseyClientRef.current = client;
@@ -436,8 +439,8 @@ export default function WorldBuilderPage() {
           setOdysseyStatus('connected');
           setViewerOverlay(null);
 
-          // Immediately start a stream with the prompt
-          client.startStream({ prompt: trimmed, portrait: false }).then(() => {
+          // Start stream with the property image
+          client.startStream({ prompt: 'Explore this property', portrait: false, image: imgFile }).then(() => {
             setOdysseyStatus('streaming');
             setGenerating(false);
           });
@@ -471,7 +474,7 @@ export default function WorldBuilderPage() {
       setEmptyState(true);
       setGenerating(false);
     }
-  }, [prompt]);
+  }, [selectedImage]);
 
   const odysseyInteract = useCallback(async () => {
     const text = odysseyInteraction.trim();
@@ -506,6 +509,7 @@ export default function WorldBuilderPage() {
   const odysseyLive = mode === 'odyssey' && (odysseyStatus === 'connected' || odysseyStatus === 'streaming');
   const btnLabel = mode === 'world' ? 'Generate World' : mode === 'advert' ? 'Generate Ad' : odysseyLive ? 'End Stream' : 'Start Stream';
   const btnLabelActive = mode === 'world' ? 'Generating…' : mode === 'advert' ? 'Generating…' : 'Connecting…';
+  const canGenerate = !!selectedImage;
 
   // Should we show the 3D canvas or a video player?
   const showVideo = mode === 'advert' && videoUrl;
@@ -556,22 +560,64 @@ export default function WorldBuilderPage() {
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto px-4 py-2 space-y-3">
 
-            {/* Prompt */}
+            {/* Property image selector */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-medium text-text-tertiary tracking-wider uppercase">
-                {mode === 'world' ? 'Describe your space' : mode === 'advert' ? 'Describe your ad' : 'Describe your world'}
+                Select Property Image
               </label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleGenerate(); }}
-                placeholder={PLACEHOLDERS[mode]}
-                className="w-full min-h-[90px] text-[12px] leading-relaxed resize-vertical rounded-sm px-3 py-2.5 transition-colors focus:outline-none"
-                style={{ background: 'var(--bg-body)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontFamily: 'inherit' }}
-                onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
-                onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-              />
+              <div className="grid grid-cols-2 gap-1.5">
+                {PROPERTIES.slice(0, 12).map((prop) => (
+                  <button
+                    key={prop.id}
+                    onClick={() => setSelectedImage(selectedImage === prop.image ? null : prop.image)}
+                    className="relative rounded-sm overflow-hidden cursor-pointer transition-all group"
+                    style={{
+                      border: selectedImage === prop.image ? '2px solid var(--accent)' : '1px solid var(--border)',
+                      boxShadow: selectedImage === prop.image ? '0 0 12px rgba(6,182,212,0.25)' : 'none',
+                    }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={prop.image}
+                      alt={prop.address}
+                      className="w-full h-[60px] object-cover transition-all"
+                      style={{ opacity: selectedImage && selectedImage !== prop.image ? 0.4 : 1 }}
+                    />
+                    <div className="absolute inset-0" style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.7) 0%, transparent 60%)' }} />
+                    <div className="absolute bottom-0.5 left-1 right-1">
+                      <p className="text-[8px] font-semibold text-white truncate leading-tight">{prop.address}</p>
+                      <p className="text-[7px] text-white/60 font-mono">{formatPrice(prop.price)}</p>
+                    </div>
+                    {selectedImage === prop.image && (
+                      <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center"
+                        style={{ background: 'var(--accent)' }}>
+                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* Ad Generator: text prompt (optional) */}
+            {mode === 'advert' && (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium text-text-tertiary tracking-wider uppercase">
+                  Direction <span className="opacity-50">(optional)</span>
+                </label>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleGenerate(); }}
+                  placeholder="Cinematic drone shot, golden hour lighting, slow pan across the front…"
+                  className="w-full min-h-[70px] text-[12px] leading-relaxed resize-vertical rounded-sm px-3 py-2.5 transition-colors focus:outline-none"
+                  style={{ background: 'var(--bg-body)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontFamily: 'inherit' }}
+                  onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
+                  onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
+                />
+              </div>
+            )}
 
             {/* Mode-specific options */}
             {mode === 'world' && (
@@ -594,7 +640,7 @@ export default function WorldBuilderPage() {
             {mode === 'odyssey' && (
               <div className="rounded-sm px-3 py-2" style={{ background: 'var(--bg-body)', border: '1px solid var(--border)' }}>
                 <p className="text-[10px] text-text-tertiary leading-relaxed">
-                  Odyssey opens a <span className="text-text-secondary font-medium">live interactive stream</span> you can explore and direct in real-time. Type prompts to interact with the world.
+                  Odyssey opens a <span className="text-text-secondary font-medium">live interactive stream</span> from the selected property image. Explore and direct in real-time.
                 </p>
               </div>
             )}
@@ -602,11 +648,11 @@ export default function WorldBuilderPage() {
             {/* Generate / End Stream button */}
             <button
               onClick={odysseyLive ? odysseyEnd : handleGenerate}
-              disabled={!odysseyLive && (generating || !prompt.trim())}
+              disabled={!odysseyLive && (generating || !canGenerate)}
               className="w-full py-2.5 text-[12px] font-semibold cursor-pointer transition-all rounded-sm flex items-center justify-center gap-2"
               style={{
-                background: odysseyLive ? 'var(--red, #ef4444)' : (generating || !prompt.trim() ? 'var(--bg-muted)' : 'var(--accent)'),
-                color: odysseyLive ? 'white' : (generating || !prompt.trim() ? 'var(--text-tertiary)' : 'white'),
+                background: odysseyLive ? 'var(--red, #ef4444)' : (generating || !canGenerate ? 'var(--bg-muted)' : 'var(--accent)'),
+                color: odysseyLive ? 'white' : (generating || !canGenerate ? 'var(--text-tertiary)' : 'white'),
                 opacity: generating ? 0.6 : 1,
                 cursor: (!odysseyLive && generating) ? 'not-allowed' : 'pointer',
               }}>
@@ -620,18 +666,18 @@ export default function WorldBuilderPage() {
             {mode === 'world' && showProgress && (
               <div className="space-y-2 fade-in">
                 <div className="text-[10px] font-medium text-text-tertiary tracking-wider uppercase">Pipeline</div>
-                {(['panorama', 'world'] as const).map((key) => (
+                {(['upload', 'world'] as const).map((key) => (
                   <div key={key} className="flex items-center gap-2.5 py-1">
                     <div className="w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
                       style={{
-                        background: stages[key] === 'running' ? 'var(--accent)' : stages[key] === 'done' ? 'var(--green)' : stages[key] === 'error' ? 'var(--red)' : 'var(--bg-muted)',
-                        color: stages[key] === 'pending' ? 'var(--text-tertiary)' : 'white',
-                        boxShadow: stages[key] === 'running' ? '0 0 8px rgba(6,182,212,0.4)' : 'none',
-                        animation: stages[key] === 'running' ? 'soft-pulse 2.5s ease-in-out infinite' : 'none',
+                        background: stages[key as keyof StageState] === 'running' ? 'var(--accent)' : stages[key as keyof StageState] === 'done' ? 'var(--green)' : stages[key as keyof StageState] === 'error' ? 'var(--red)' : 'var(--bg-muted)',
+                        color: stages[key as keyof StageState] === 'pending' ? 'var(--text-tertiary)' : 'white',
+                        boxShadow: stages[key as keyof StageState] === 'running' ? '0 0 8px rgba(6,182,212,0.4)' : 'none',
+                        animation: stages[key as keyof StageState] === 'running' ? 'soft-pulse 2.5s ease-in-out infinite' : 'none',
                       }}>
-                      {STAGE_META[key].icon[stages[key]]}
+                      {STAGE_META[key].icon[stages[key as keyof StageState]]}
                     </div>
-                    <span className="text-[11px]" style={{ color: stageColor(stages[key]) }}>{STAGE_META[key].label}</span>
+                    <span className="text-[11px]" style={{ color: stageColor(stages[key as keyof StageState]) }}>{STAGE_META[key].label}</span>
                   </div>
                 ))}
                 {logs.length > 0 && (
@@ -655,24 +701,26 @@ export default function WorldBuilderPage() {
               </div>
             )}
 
-            {/* Divider */}
-            <div className="h-px" style={{ background: 'var(--border)' }} />
-
-            {/* Examples */}
-            <div className="space-y-2">
-              <div className="text-[10px] font-medium text-text-tertiary tracking-wider uppercase">Example Prompts</div>
-              <div className="space-y-1">
-                {EXAMPLES[mode].map((ex) => (
-                  <button key={ex.label} onClick={() => setPrompt(ex.prompt)}
-                    className="w-full text-left px-3 py-2 text-[11px] rounded-sm transition-all cursor-pointer"
-                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(6,182,212,0.3)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
-                    {ex.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {/* Divider + ad example prompts */}
+            {mode === 'advert' && (
+              <>
+                <div className="h-px" style={{ background: 'var(--border)' }} />
+                <div className="space-y-2">
+                  <div className="text-[10px] font-medium text-text-tertiary tracking-wider uppercase">Example Directions</div>
+                  <div className="space-y-1">
+                    {AD_EXAMPLES.map((ex) => (
+                      <button key={ex.label} onClick={() => setPrompt(ex.prompt)}
+                        className="w-full text-left px-3 py-2 text-[11px] rounded-sm transition-all cursor-pointer"
+                        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(6,182,212,0.3)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
+                        {ex.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -776,15 +824,9 @@ export default function WorldBuilderPage() {
                 )}
               </div>
               <p className="text-[12px] text-text-tertiary text-center leading-relaxed">
-                Enter a prompt and press <span className="font-semibold text-text-secondary">{btnLabel}</span><br />
+                Select a property image and press <span className="font-semibold text-text-secondary">{btnLabel}</span><br />
                 {mode === 'world' ? 'to create an interactive 3D environment.' : mode === 'advert' ? 'to generate a property advertisement video.' : 'to start a live interactive world stream.'}
               </p>
-              <div className="flex items-center gap-2 mt-3">
-                <kbd className="font-mono text-[9px] px-1.5 py-0.5 rounded-sm" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>Ctrl</kbd>
-                <span className="text-[9px] text-text-tertiary">+</span>
-                <kbd className="font-mono text-[9px] px-1.5 py-0.5 rounded-sm" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>Enter</kbd>
-                <span className="text-[9px] text-text-tertiary ml-1">to generate</span>
-              </div>
             </div>
           )}
 
