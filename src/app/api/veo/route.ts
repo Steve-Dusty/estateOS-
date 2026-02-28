@@ -13,37 +13,52 @@ export async function POST(req: NextRequest) {
       imageBase64?: string;
     };
 
-    if (!imageBase64) {
-      return NextResponse.json({ error: 'Image is required' }, { status: 400 });
+    if (!prompt?.trim() && !imageBase64) {
+      return NextResponse.json({ error: 'Prompt or image is required' }, { status: 400 });
     }
 
     const jobId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const jobDir = path.join(RESULTS_DIR, jobId);
     await mkdir(jobDir, { recursive: true });
 
-    // Extract raw base64 data and mime type
-    let mimeType = 'image/jpeg';
-    let rawBase64 = imageBase64;
-    if (imageBase64.includes(',')) {
-      const header = imageBase64.split(',')[0];
-      const mimeMatch = header.match(/data:(.*?);/);
-      if (mimeMatch) mimeType = mimeMatch[1];
-      rawBase64 = imageBase64.split(',')[1];
-    }
+    const veoPrompt = prompt?.trim() || 'Cinematic real estate advertisement video of this property';
 
-    // Start video generation with image input
-    let operation = await ai.models.generateVideos({
-      model: 'veo-3.0-generate-001',
-      prompt: prompt?.trim() || 'Cinematic real estate advertisement video of this property',
-      image: {
-        imageBytes: rawBase64,
-        mimeType,
-      },
-      config: {
-        aspectRatio: '16:9',
-        numberOfVideos: 1,
-      },
-    });
+    let operation;
+
+    if (imageBase64) {
+      // Image input mode: use Veo with image
+      let mimeType = 'image/jpeg';
+      let rawBase64 = imageBase64;
+      if (imageBase64.includes(',')) {
+        const header = imageBase64.split(',')[0];
+        const mimeMatch = header.match(/data:(.*?);/);
+        if (mimeMatch) mimeType = mimeMatch[1];
+        rawBase64 = imageBase64.split(',')[1];
+      }
+
+      operation = await ai.models.generateVideos({
+        model: 'veo-3.0-generate-001',
+        prompt: veoPrompt,
+        image: {
+          imageBytes: rawBase64,
+          mimeType,
+        },
+        config: {
+          aspectRatio: '16:9',
+          numberOfVideos: 1,
+        },
+      });
+    } else {
+      // Text-only mode
+      operation = await ai.models.generateVideos({
+        model: 'veo-3.0-generate-001',
+        prompt: veoPrompt,
+        config: {
+          aspectRatio: '16:9',
+          numberOfVideos: 1,
+        },
+      });
+    }
 
     // Poll for completion
     while (!operation.done) {

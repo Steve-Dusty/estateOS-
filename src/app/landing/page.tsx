@@ -610,7 +610,7 @@ export default function LandingPage() {
           ))}
         </div>
         <Link href="/" className="text-[13px] px-5 py-2 border border-white/20 hover:border-white/50 hover:bg-white/[0.04] transition-all tracking-wide">
-          Get Started
+          Enter Agent View
         </Link>
       </nav>
 
@@ -631,12 +631,12 @@ export default function LandingPage() {
           <div className="flex items-center gap-5">
             <Link href="/"
               className="text-[13px] px-8 py-3 border border-white/20 hover:border-white/50 hover:bg-white/[0.04] text-white tracking-wide transition-all">
-              Get started
+              Enter agent view
             </Link>
-            <Link href="#features"
+            <Link href="/client"
               className="text-[13px] px-8 py-3 text-white tracking-wide transition-all hover:brightness-125"
               style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.06))', border: '1px solid rgba(255,255,255,0.12)' }}>
-              Learn more
+              Client view
             </Link>
           </div>
         </div>
@@ -795,10 +795,17 @@ export default function LandingPage() {
           <p className="text-white/35 text-[15px] mt-6 mb-12 max-w-md mx-auto leading-relaxed">
             Deploy the intelligence layer across your portfolio in minutes.
           </p>
-          <Link href="/"
-            className="inline-block text-[13px] px-10 py-3.5 border border-white/20 hover:border-white/50 hover:bg-white/[0.04] text-white tracking-wide transition-all">
-            Enter EstateOS
-          </Link>
+          <div className="flex items-center justify-center gap-5">
+            <Link href="/"
+              className="text-[13px] px-10 py-3.5 border border-white/20 hover:border-white/50 hover:bg-white/[0.04] text-white tracking-wide transition-all">
+              Enter agent view
+            </Link>
+            <Link href="/client"
+              className="text-[13px] px-10 py-3.5 text-white tracking-wide transition-all hover:brightness-125"
+              style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.06))', border: '1px solid rgba(255,255,255,0.12)' }}>
+              Client view
+            </Link>
+          </div>
         </section>
       </Reveal>
 

@@ -103,34 +103,72 @@ async function spacePredictSSE(fnIndex: number, data: unknown[], maxRetries = 5)
 
 /* ── Main pipeline ─────────────────────────────────────────────────── */
 
-export async function runPipeline(imageBase64: string, jobId: string) {
+export async function runPipeline(jobId: string, prompt?: string, imageBase64?: string) {
   broadcastEvent(jobId, { type: 'info', message: `Job ${jobId} started` });
 
   const jobDir = path.join(RESULTS_DIR, jobId);
   await mkdir(jobDir, { recursive: true });
 
   try {
-    // ── Step 1: Decode base64 image ─────────────────────────────────
-    broadcastEvent(jobId, { type: 'stage', stage: 'upload', status: 'running' });
-    broadcastEvent(jobId, { type: 'log', stage: 'upload', message: 'Processing uploaded image…' });
+    let imageBuffer: Buffer;
+    let imageUrl: string;
 
-    // Strip data URL prefix if present (e.g. "data:image/jpeg;base64,...")
-    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-    const imageBuffer = Buffer.from(base64Data, 'base64');
+    if (imageBase64) {
+      // ── Path A: Use provided image directly ──────────────────────
+      broadcastEvent(jobId, { type: 'stage', stage: 'upload', status: 'running' });
+      broadcastEvent(jobId, { type: 'log', stage: 'upload', message: 'Processing uploaded image…' });
 
-    const imagePath = path.join(jobDir, 'input.png');
-    await writeFile(imagePath, imageBuffer);
+      const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+      imageBuffer = Buffer.from(base64Data, 'base64');
 
-    const imageUrl = `/generated/${jobId}/input.png`;
-    broadcastEvent(jobId, { type: 'log', stage: 'upload', message: 'Image ready' });
-    broadcastEvent(jobId, { type: 'stage_done', stage: 'upload', panorama_url: imageUrl });
+      const imagePath = path.join(jobDir, 'input.png');
+      await writeFile(imagePath, imageBuffer);
 
-    // ── Step 2: Upload image to Gradio Space ────────────────────────
+      imageUrl = `/generated/${jobId}/input.png`;
+      broadcastEvent(jobId, { type: 'log', stage: 'upload', message: 'Image ready' });
+      broadcastEvent(jobId, { type: 'stage_done', stage: 'upload', panorama_url: imageUrl });
+    } else {
+      // ── Path B: Generate panorama from text prompt via SDXL ──────
+      broadcastEvent(jobId, { type: 'stage', stage: 'panorama', status: 'running' });
+      broadcastEvent(jobId, { type: 'log', stage: 'panorama', message: 'Calling HF Inference API (SDXL)…' });
+
+      const panoramaPrompt = prompt + ', equirectangular panorama, 360 degree view, high quality, detailed';
+
+      const hfRes = await fetch(
+        'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${HF_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            inputs: panoramaPrompt,
+            parameters: { width: 2048, height: 1024 },
+          }),
+        },
+      );
+
+      if (!hfRes.ok) {
+        const errText = await hfRes.text().catch(() => hfRes.status.toString());
+        throw new Error(`HF Inference API error ${hfRes.status}: ${errText}`);
+      }
+
+      imageBuffer = Buffer.from(await hfRes.arrayBuffer());
+      const panoramaPath = path.join(jobDir, 'panorama.png');
+      await writeFile(panoramaPath, imageBuffer);
+
+      imageUrl = `/generated/${jobId}/panorama.png`;
+      broadcastEvent(jobId, { type: 'log', stage: 'panorama', message: 'Panorama generated successfully' });
+      broadcastEvent(jobId, { type: 'stage_done', stage: 'panorama', panorama_url: imageUrl });
+    }
+
+    // ── Upload image to Gradio Space ────────────────────────────────
     broadcastEvent(jobId, { type: 'stage', stage: 'world', status: 'running' });
     broadcastEvent(jobId, { type: 'log', stage: 'world', message: 'Uploading image to HunyuanWorld…' });
 
     const formData = new FormData();
-    const blob = new Blob([imageBuffer], { type: 'image/png' });
+    const blob = new Blob([new Uint8Array(imageBuffer)], { type: 'image/png' });
     formData.append('files', blob, 'input.png');
 
     const uploadRes = await fetch(`${SPACE_BASE}/gradio_api/upload`, {
@@ -155,7 +193,7 @@ export async function runPipeline(imageBase64: string, jobId: string) {
       meta: { _type: 'gradio.FileData' },
     };
 
-    // ── Step 3a: Process upload (fn_index 14) ───────────────────────
+    // ── Process upload (fn_index 14) ────────────────────────────────
     broadcastEvent(jobId, { type: 'log', stage: 'world', message: 'Processing image upload…' });
 
     const processOut = await spacePredictSSE(14, [[fileData], 1.0]) as [string];
@@ -163,7 +201,7 @@ export async function runPipeline(imageBase64: string, jobId: string) {
 
     broadcastEvent(jobId, { type: 'log', stage: 'world', message: `Workspace ready: ${workspacePath}` });
 
-    // ── Step 3b: 3D reconstruction (fn_index 5) ─────────────────────
+    // ── 3D reconstruction (fn_index 5) ──────────────────────────────
     broadcastEvent(jobId, { type: 'log', stage: 'world', message: 'Running 3D reconstruction (ZeroGPU, ~60–120s)…' });
 
     const reconOut = await spacePredictSSE(5, [workspacePath, 'All', false, true, true, false]) as [{ url?: string; path?: string }];
@@ -178,7 +216,7 @@ export async function runPipeline(imageBase64: string, jobId: string) {
       throw new Error(`Unexpected 3D reconstruction output: ${JSON.stringify(reconOut)}`);
     }
 
-    // ── Step 4: Download GLB ────────────────────────────────────────
+    // ── Download GLB ────────────────────────────────────────────────
     broadcastEvent(jobId, { type: 'log', stage: 'world', message: 'Downloading GLB model…' });
 
     const glbRes = await fetch(glbUrl, {

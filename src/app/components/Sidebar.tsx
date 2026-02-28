@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Property, PROPERTIES, formatPrice } from '../lib/properties';
 
 interface SidebarProps {
@@ -8,9 +9,40 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ selectedId, onSelect }: SidebarProps) {
+  const [width, setWidth] = useState(260);
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const startW = useRef(0);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = e.clientX - startX.current;
+      setWidth(Math.max(180, Math.min(500, startW.current + delta)));
+    };
+    const onMouseUp = () => { isDragging.current = false; document.body.style.cursor = ''; document.body.style.userSelect = ''; };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
+  }, []);
+
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    startX.current = e.clientX;
+    startW.current = width;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [width]);
+
   return (
-    <div className="w-[260px] min-w-[260px] flex flex-col border-r overflow-hidden relative z-10"
-      style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
+    <div className="flex flex-col border-r overflow-hidden relative z-10"
+      style={{ width, minWidth: 180, maxWidth: 500, borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
+
+      {/* Drag handle */}
+      <div
+        className="absolute top-0 right-0 w-[4px] h-full cursor-col-resize z-20 hover:bg-accent/30 active:bg-accent/50 transition-colors"
+        onMouseDown={onDragStart}
+      />
 
       <div className="px-3 pt-3 pb-2 flex items-center justify-between">
         <span className="text-[11px] font-semibold text-text-tertiary tracking-widest uppercase">Properties</span>
@@ -25,6 +57,7 @@ export default function Sidebar({ selectedId, onSelect }: SidebarProps) {
 
             {/* Image */}
             <div className="w-full h-[100px] overflow-hidden relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={property.image} alt={property.address}
                 className="w-full h-full object-cover" />
               <div className="absolute inset-0" style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.55) 0%, transparent 50%)' }} />
