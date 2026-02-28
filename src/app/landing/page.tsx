@@ -83,7 +83,7 @@ function DotMatrixHeading({ lines, maxWidth = 920 }: { lines: string[]; maxWidth
       const oc = off.getContext('2d');
       if (!oc) return;
 
-      const fontSize = 58;
+      const fontSize = 68;
       const lh = fontSize * 1.3;
       oc.font = `600 ${fontSize}px "DM Sans", sans-serif`;
       let maxW = 0;
@@ -104,7 +104,7 @@ function DotMatrixHeading({ lines, maxWidth = 920 }: { lines: string[]; maxWidth
       const step = 3;
       const cols = Math.ceil(off.width / step);
       const rows = Math.ceil(off.height / step);
-      const dotR = 1.15;
+      const dotR = 1.5;
       const gap = step;
 
       cvs.width = cols * gap;
@@ -144,7 +144,7 @@ function DotMatrixHeading({ lines, maxWidth = 920 }: { lines: string[]; maxWidth
           if (progress > 0) {
             mainCtx.beginPath();
             mainCtx.arc(d.x, d.y, dotR, 0, Math.PI * 2);
-            mainCtx.fillStyle = `rgba(215,215,215,${d.a * progress})`;
+            mainCtx.fillStyle = `rgba(255,255,255,${d.a * progress})`;
             mainCtx.fill();
           }
         }
@@ -166,83 +166,86 @@ function DotMatrixHeading({ lines, maxWidth = 920 }: { lines: string[]; maxWidth
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PARTICLE NETWORK — Interactive background with mouse repulsion
+   MAPBOX FLYING BACKGROUND — Full-screen map traveling at speed
    ═══════════════════════════════════════════════════════════════ */
-function ParticleNetwork() {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const mouse = useRef({ x: -9999, y: -9999 });
+const FLIGHT_WAYPOINTS: [number, number][] = [
+  [-117.826, 33.6846],   // Irvine
+  [-117.929, 33.6189],   // Newport Beach
+  [-117.918, 33.6595],   // Costa Mesa
+  [-117.783, 33.5427],   // Laguna Beach
+  [-117.832, 33.7175],   // Tustin
+  [-117.672, 33.5964],   // Mission Viejo
+  [-117.689, 33.6469],   // Lake Forest
+  [-117.768, 33.6014],   // Aliso Viejo
+];
+
+function MapBackground() {
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const el = ref.current;
+    const el = containerRef.current;
     if (!el) return;
-    const canvas: HTMLCanvasElement = el;
-    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 
-    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
-    resize();
-    window.addEventListener('resize', resize);
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    let map: any = null;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
 
-    const N = 70, MAX_D = 160;
-    interface P { x: number; y: number; vx: number; vy: number; r: number }
-    const ps: P[] = Array.from({ length: N }, () => ({
-      x: Math.random() * canvas.width, y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4,
-      r: Math.random() * 1.5 + 0.5,
-    }));
+    (async () => {
+      const mapboxgl = (await import('mapbox-gl')).default;
+      if (cancelled) return;
 
-    let id: number;
-    function loop() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const m = mouse.current;
-      for (const p of ps) {
-        p.x += p.vx; p.y += p.vy;
-        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
-        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
-        const dx = p.x - m.x, dy = p.y - m.y, dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 180 && dist > 0) {
-          const f = (180 - dist) / 180 * 0.6;
-          p.x += (dx / dist) * f; p.y += (dy / dist) * f;
+      mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+
+      map = new mapboxgl.Map({
+        container: el,
+        style: 'mapbox://styles/mapbox/satellite-streets-v12',
+        center: FLIGHT_WAYPOINTS[0],
+        zoom: 13,
+        pitch: 0,
+        bearing: -20,
+        interactive: false,
+        attributionControl: false,
+        fadeDuration: 0,
+      });
+
+      map.on('load', () => {
+        if (cancelled || !map) return;
+        let idx = 0;
+
+        function flyNext() {
+          if (cancelled || !map) return;
+          idx = (idx + 1) % FLIGHT_WAYPOINTS.length;
+          const bearing = -20 + (idx * 45) % 360;
+          map.easeTo({
+            center: FLIGHT_WAYPOINTS[idx],
+            zoom: 13 + Math.sin(idx * 0.7) * 0.5,
+            pitch: 0,
+            bearing,
+            duration: 12000,
+            easing: (t: number) => t,
+          });
+          timer = setTimeout(flyNext, 12000);
         }
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fill();
-      }
-      ctx.lineWidth = 0.5;
-      for (let i = 0; i < N; i++) {
-        for (let j = i + 1; j < N; j++) {
-          const dx = ps[i].x - ps[j].x, dy = ps[i].y - ps[j].y;
-          const d = Math.sqrt(dx * dx + dy * dy);
-          if (d < MAX_D) {
-            ctx.strokeStyle = `rgba(255,255,255,${(1 - d / MAX_D) * 0.04})`;
-            ctx.beginPath();
-            ctx.moveTo(ps[i].x, ps[i].y);
-            ctx.lineTo(ps[j].x, ps[j].y);
-            ctx.stroke();
-          }
-        }
-      }
-      id = requestAnimationFrame(loop);
-    }
-    id = requestAnimationFrame(loop);
-
-    const onMouse = (e: MouseEvent) => {
-      const r = canvas.getBoundingClientRect();
-      mouse.current = { x: e.clientX - r.left, y: e.clientY - r.top };
-    };
-    const onLeave = () => { mouse.current = { x: -9999, y: -9999 }; };
-    canvas.addEventListener('mousemove', onMouse, { passive: true });
-    canvas.addEventListener('mouseleave', onLeave);
+        flyNext();
+      });
+    })();
 
     return () => {
-      cancelAnimationFrame(id);
-      window.removeEventListener('resize', resize);
-      canvas.removeEventListener('mousemove', onMouse);
-      canvas.removeEventListener('mouseleave', onLeave);
+      cancelled = true;
+      clearTimeout(timer);
+      if (map) { map.remove(); map = null; }
     };
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   }, []);
 
-  return <canvas ref={ref} className="absolute inset-0 w-full h-full" />;
+  return (
+    <>
+      <div ref={containerRef} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 0 }} />
+      {/* Dark earthy overlay — keeps text readable */}
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 1, pointerEvents: 'none', background: 'rgba(0,0,0,0.55)' }} />
+    </>
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -357,8 +360,8 @@ function LiveFeed() {
       {events.map((e) => (
         <div key={e.id} className="flex items-start gap-3 py-2 px-3 transition-all"
           style={{ borderLeft: `2px solid ${e.color}40`, animation: 'fadeUp 0.3s ease forwards' }}>
-          <span className="text-[10px] text-white/20 shrink-0 mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{e.time}</span>
-          <span className="text-[12px] text-white/45 leading-snug">{e.text}</span>
+          <span className="text-[10px] text-white shrink-0 mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{e.time}</span>
+          <span className="text-[12px] text-white leading-snug">{e.text}</span>
         </div>
       ))}
     </div>
@@ -456,7 +459,7 @@ function MiniMap() {
 
         /* label */
         ctx.font = '9px "JetBrains Mono", monospace';
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
         ctx.textAlign = 'center';
         ctx.fillText(p.label, px, py - 14);
 
@@ -483,7 +486,7 @@ function MiniMap() {
         ctx.textAlign = 'left';
         ctx.fillText(hovered.label, px + 8, py + 15);
         ctx.font = '9px "JetBrains Mono", monospace';
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
         ctx.fillText(`${hovered.signals} active signals`, px + 8, py + 28);
       }
 
@@ -555,7 +558,7 @@ function DotMatrixSubheading({ text, maxWidth = 600 }: { text: string; maxWidth?
             if (a > 60) {
               ctx.beginPath();
               ctx.arc(gx * step + step / 2, gy * step + step / 2, 1, 0, Math.PI * 2);
-              ctx.fillStyle = `rgba(210,210,210,${Math.min(a / 255, 1)})`;
+              ctx.fillStyle = `rgba(255,255,255,${Math.min(a / 255, 1)})`;
               ctx.fill();
             }
           }
@@ -574,21 +577,31 @@ export default function LandingPage() {
   useEffect(() => {
     document.body.style.overflow = 'auto';
     document.documentElement.style.overflow = 'auto';
-    return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; };
+    document.body.style.background = 'transparent';
+    document.documentElement.style.background = 'transparent';
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.background = '';
+      document.documentElement.style.background = '';
+    };
   }, []);
 
   return (
-    <div className="min-h-screen bg-black text-white relative">
+    <div className="min-h-screen text-white relative" style={{ background: 'transparent' }}>
+      {/* ── Mapbox flying background ── */}
+      <MapBackground />
+
       {/* ── Frame borders ── */}
-      <div className="fixed left-6 top-0 bottom-0 w-px bg-white/[0.06] z-0" />
-      <div className="fixed right-6 top-0 bottom-0 w-px bg-white/[0.06] z-0" />
+      <div className="fixed left-6 top-0 bottom-0 w-px bg-white/[0.1] z-[2]" />
+      <div className="fixed right-6 top-0 bottom-0 w-px bg-white/[0.1] z-[2]" />
 
       {/* ── Corner hatching ── */}
       {[
         { pos: 'top-0 left-0', angle: -45, mask: '135deg' },
         { pos: 'top-0 right-0', angle: 45, mask: '-135deg' },
       ].map((h) => (
-        <div key={h.pos} className={`absolute ${h.pos} w-[140px] h-[90px] z-10 pointer-events-none`}
+        <div key={h.pos} className={`absolute ${h.pos} w-[140px] h-[90px] z-[2] pointer-events-none`}
           style={{
             background: `repeating-linear-gradient(${h.angle}deg, transparent, transparent 5px, rgba(255,255,255,0.04) 5px, rgba(255,255,255,0.04) 6px)`,
             maskImage: `linear-gradient(${h.mask}, black 25%, transparent 100%)`,
@@ -597,45 +610,33 @@ export default function LandingPage() {
       ))}
 
       {/* ════════════════════ NAVIGATION ════════════════════ */}
-      <nav className="relative z-20 flex items-center justify-between px-10 py-4"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <Link href="/landing" className="flex items-center gap-2.5 group">
-          <div className="w-9 h-9 rounded-full border border-white/20 flex items-center justify-center group-hover:border-white/40 transition-colors">
-            <span className="text-[11px] font-bold tracking-tight" style={{ fontFamily: "'JetBrains Mono', monospace" }}>ES</span>
-          </div>
-        </Link>
-        <div className="hidden md:flex items-center gap-8">
-          {['Architecture', 'Platform', 'Solutions', 'Developers', 'Docs', 'Company'].map((l) => (
-            <a key={l} href="#" className="text-[13px] text-white/45 hover:text-white transition-colors tracking-wide">{l}</a>
-          ))}
-        </div>
-        <Link href="/" className="text-[13px] px-5 py-2 border border-white/20 hover:border-white/50 hover:bg-white/[0.04] transition-all tracking-wide">
-          Enter Agent View
+      <nav className="relative z-[5] flex items-center justify-center px-10 py-5"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        <Link href="/landing" className="text-[20px] font-bold text-white tracking-[0.3em] uppercase"
+          style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+          EstateOS
         </Link>
       </nav>
 
       {/* ════════════════════ HERO ════════════════════ */}
       <section className="relative z-10 flex flex-col items-center pt-24 pb-16 px-6 overflow-hidden" style={{ minHeight: '70vh' }}>
-        {/* Particle background */}
-        <ParticleNetwork />
 
         {/* Dot-matrix heading */}
         <div className="relative z-10 flex flex-col items-center">
           <DotMatrixHeading lines={['The intelligence layer', 'for real estate']} maxWidth={920} />
 
-          <p className="text-center max-w-[640px] text-white/40 text-[15px] leading-relaxed mt-8 mb-14 tracking-wide">
+          <p className="text-center max-w-[640px] text-white text-[15px] leading-relaxed mt-8 mb-14 tracking-wide">
             Our AI aggregates market signals, removes noise, and delivers only
             what&apos;s actionable at scale and in real time.
           </p>
 
           <div className="flex items-center gap-5">
             <Link href="/"
-              className="text-[13px] px-8 py-3 border border-white/20 hover:border-white/50 hover:bg-white/[0.04] text-white tracking-wide transition-all">
+              className="text-[13px] px-8 py-3 border border-white/60 hover:border-white hover:bg-white/[0.15] text-white tracking-wide transition-all backdrop-blur-sm">
               Enter agent view
             </Link>
             <Link href="/client"
-              className="text-[13px] px-8 py-3 text-white tracking-wide transition-all hover:brightness-125"
-              style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.06))', border: '1px solid rgba(255,255,255,0.12)' }}>
+              className="text-[13px] px-8 py-3 border border-white/60 hover:border-white hover:bg-white/[0.15] text-white tracking-wide transition-all backdrop-blur-sm">
               Client view
             </Link>
           </div>
@@ -643,7 +644,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Divider ── */}
-      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ DITHERED IMAGE ════════════════════ */}
       <section className="relative z-10 mx-6">
@@ -653,7 +654,7 @@ export default function LandingPage() {
         />
       </section>
 
-      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ STATS — Animated counters ════════════════════ */}
       <Reveal>
@@ -667,10 +668,10 @@ export default function LandingPage() {
             ].map((s, i) => (
               <Reveal key={s.label} delay={i * 0.1}>
                 <div className="text-center">
-                  <div className="text-3xl md:text-4xl mb-2 text-white/90" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                  <div className="text-3xl md:text-4xl mb-2 text-white" style={{ fontFamily: "'JetBrains Mono', monospace", textShadow: '0 2px 12px rgba(0,0,0,0.5)' }}>
                     {s.prefix || ''}<Counter target={s.target} />{s.suffix}
                   </div>
-                  <div className="text-[11px] text-white/30 tracking-[0.2em] uppercase">{s.label}</div>
+                  <div className="text-[11px] text-white tracking-[0.2em] uppercase">{s.label}</div>
                 </div>
               </Reveal>
             ))}
@@ -678,23 +679,23 @@ export default function LandingPage() {
         </section>
       </Reveal>
 
-      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ INTERACTIVE DEMO ════════════════════ */}
       <Reveal>
         <section className="relative z-10 mx-6 py-24">
           <div className="max-w-6xl mx-auto">
-            <p className="text-[11px] tracking-[0.25em] text-white/25 uppercase mb-4">Live Demo</p>
+            <p className="text-[11px] tracking-[0.25em] text-white uppercase mb-4">Live Demo</p>
             <div className="mb-12">
               <DotMatrixSubheading text="Intelligence in motion" maxWidth={500} />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/[0.04]" style={{ border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-px rounded-sm overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)' }}>
               {/* Live feed */}
-              <div className="bg-black p-8">
+              <div className="p-8">
                 <div className="flex items-center gap-2 mb-6">
                   <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-[10px] tracking-[0.2em] text-white/30 uppercase" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span className="text-[10px] tracking-[0.2em] text-white uppercase" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                     Real-time feed
                   </span>
                 </div>
@@ -702,10 +703,10 @@ export default function LandingPage() {
               </div>
 
               {/* Mini map */}
-              <div className="bg-black p-8">
+              <div className="p-8" style={{ borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
                 <div className="flex items-center gap-2 mb-6">
                   <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
-                  <span className="text-[10px] tracking-[0.2em] text-white/30 uppercase" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span className="text-[10px] tracking-[0.2em] text-white uppercase" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                     Signal map — Orange County
                   </span>
                 </div>
@@ -716,13 +717,13 @@ export default function LandingPage() {
         </section>
       </Reveal>
 
-      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ FEATURES — 3D tilt cards ════════════════════ */}
       <section id="features" className="relative z-10 mx-6 py-24">
         <Reveal>
           <div className="max-w-5xl mx-auto mb-16 text-center">
-            <p className="text-[11px] tracking-[0.25em] text-white/25 uppercase mb-4">Capabilities</p>
+            <p className="text-[11px] tracking-[0.25em] text-white uppercase mb-4">Capabilities</p>
             <DotMatrixSubheading text="Built for operators" maxWidth={440} />
           </div>
         </Reveal>
@@ -730,35 +731,36 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
           {FEATURES.map((f, i) => (
             <Reveal key={f.label} delay={i * 0.08}>
-              <TiltCard className="p-8 cursor-default" style={{
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.05)',
+              <TiltCard className="p-8 cursor-default rounded-sm" style={{
+                background: 'rgba(0,0,0,0.35)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(12px)',
               } as React.CSSProperties}>
                 <div className="flex items-center gap-3 mb-5">
-                  <span className="text-xl text-cyan-400/60">{f.icon}</span>
-                  <p className="text-[10px] tracking-[0.3em] text-white/25 uppercase"
+                  <span className="text-xl text-cyan-400/80">{f.icon}</span>
+                  <p className="text-[10px] tracking-[0.3em] text-white uppercase"
                     style={{ fontFamily: "'JetBrains Mono', monospace" }}>{f.label}</p>
                 </div>
-                <h3 className="text-[17px] text-white/80 mb-3 leading-snug">{f.title}</h3>
-                <p className="text-[13px] text-white/30 leading-relaxed">{f.desc}</p>
+                <h3 className="text-[17px] text-white mb-3 leading-snug">{f.title}</h3>
+                <p className="text-[13px] text-white leading-relaxed">{f.desc}</p>
               </TiltCard>
             </Reveal>
           ))}
         </div>
       </section>
 
-      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ ARCHITECTURE PIPELINE ════════════════════ */}
       <Reveal>
         <section className="relative z-10 mx-6 py-24">
           <div className="max-w-5xl mx-auto">
-            <p className="text-[11px] tracking-[0.25em] text-white/25 uppercase mb-4">Architecture</p>
+            <p className="text-[11px] tracking-[0.25em] text-white uppercase mb-4">Architecture</p>
             <div className="mb-14">
               <DotMatrixSubheading text="Signal to decision in milliseconds" maxWidth={620} />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-0 items-stretch" style={{ border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-0 items-stretch rounded-sm overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(12px)' }}>
               {[
                 { step: '01', title: 'Ingest', desc: 'Multi-source feeds', icon: '⟩' },
                 { step: '02', title: 'Extract', desc: 'Entity recognition', icon: '⟩' },
@@ -767,15 +769,15 @@ export default function LandingPage() {
                 { step: '05', title: 'Deliver', desc: 'Real-time push', icon: '✓' },
               ].map((s, i) => (
                 <Reveal key={s.step} delay={i * 0.1}>
-                  <div className="flex flex-col items-center py-10 relative bg-black hover:bg-white/[0.015] transition-colors"
-                    style={{ borderRight: i < 4 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-                    <span className="text-[10px] text-white/15 tracking-widest mb-3"
+                  <div className="flex flex-col items-center py-10 relative hover:bg-white/[0.04] transition-colors"
+                    style={{ borderRight: i < 4 ? '1px solid rgba(255,255,255,0.08)' : 'none' }}>
+                    <span className="text-[10px] text-white tracking-widest mb-3"
                       style={{ fontFamily: "'JetBrains Mono', monospace" }}>{s.step}</span>
-                    <span className="text-sm text-white/70 mb-1.5">{s.title}</span>
-                    <span className="text-[11px] text-white/25">{s.desc}</span>
+                    <span className="text-sm text-white mb-1.5">{s.title}</span>
+                    <span className="text-[11px] text-white">{s.desc}</span>
                     {i < 4 && (
-                      <div className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 w-5 h-5 rounded-full bg-black border border-white/[0.08] items-center justify-center">
-                        <span className="text-[8px] text-white/20">{s.icon}</span>
+                      <div className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 w-5 h-5 rounded-full border border-white/15 items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
+                        <span className="text-[8px] text-white">{s.icon}</span>
                       </div>
                     )}
                   </div>
@@ -786,30 +788,7 @@ export default function LandingPage() {
         </section>
       </Reveal>
 
-      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
-
-      {/* ════════════════════ CTA ════════════════════ */}
-      <Reveal>
-        <section className="relative z-10 mx-6 py-32 text-center">
-          <DotMatrixSubheading text="Start operating" maxWidth={380} />
-          <p className="text-white/35 text-[15px] mt-6 mb-12 max-w-md mx-auto leading-relaxed">
-            Deploy the intelligence layer across your portfolio in minutes.
-          </p>
-          <div className="flex items-center justify-center gap-5">
-            <Link href="/"
-              className="text-[13px] px-10 py-3.5 border border-white/20 hover:border-white/50 hover:bg-white/[0.04] text-white tracking-wide transition-all">
-              Enter agent view
-            </Link>
-            <Link href="/client"
-              className="text-[13px] px-10 py-3.5 text-white tracking-wide transition-all hover:brightness-125"
-              style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.06))', border: '1px solid rgba(255,255,255,0.12)' }}>
-              Client view
-            </Link>
-          </div>
-        </section>
-      </Reveal>
-
-      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+      <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ FOOTER ════════════════════ */}
       <footer className="relative z-10 mx-6 py-10 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -817,14 +796,14 @@ export default function LandingPage() {
           <div className="w-7 h-7 rounded-full border border-white/15 flex items-center justify-center">
             <span className="text-[9px] font-bold" style={{ fontFamily: "'JetBrains Mono', monospace" }}>ES</span>
           </div>
-          <span className="text-[12px] text-white/20 tracking-wide">EstateOS</span>
+          <span className="text-[12px] text-white tracking-wide">EstateOS</span>
         </div>
         <div className="flex items-center gap-6">
           {['Privacy', 'Terms', 'Status', 'Documentation'].map((l) => (
-            <a key={l} href="#" className="text-[11px] text-white/20 hover:text-white/45 tracking-wide transition-colors">{l}</a>
+            <a key={l} href="#" className="text-[11px] text-white hover:text-white tracking-wide transition-colors">{l}</a>
           ))}
         </div>
-        <span className="text-[11px] text-white/12 tracking-wide" style={{ fontFamily: "'JetBrains Mono', monospace" }}>v2.4.1</span>
+        <span className="text-[11px] text-white tracking-wide" style={{ fontFamily: "'JetBrains Mono', monospace" }}>v2.4.1</span>
       </footer>
 
       {/* ── Bottom hatching ── */}
