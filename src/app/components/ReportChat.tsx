@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ReportPdfModal from './ReportPdfModal';
+import { Property, formatPrice } from '../lib/properties';
 
 export type MessageType = 'text' | 'image' | 'pdf';
 
@@ -240,8 +241,60 @@ function MessageBubble({
   );
 }
 
+/* ── Property context chip (Cursor-style) ── */
+function PropertyContextChip({ property, onRemove }: { property: Property; onRemove: () => void }) {
+  return (
+    <div className="context-chip-enter context-chip-wrapper inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-md transition-all cursor-default"
+      style={{
+        background: 'rgba(6,182,212,0.08)',
+        border: '1px solid rgba(6,182,212,0.25)',
+      }}>
+      {/* Tiny property thumbnail */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={property.image}
+        alt=""
+        className="w-4 h-4 rounded-sm object-cover flex-shrink-0"
+      />
+      <span className="text-[11px] font-medium truncate max-w-[200px]"
+        style={{ color: 'var(--accent)' }}>
+        {property.address}, {property.city}
+      </span>
+      <span className="text-[9px] font-mono opacity-60" style={{ color: 'var(--accent)' }}>
+        {formatPrice(property.price)}
+      </span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        className="flex-shrink-0 w-3.5 h-3.5 rounded-sm flex items-center justify-center transition-colors cursor-pointer hover:bg-white/10"
+        aria-label="Remove context">
+        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}
+          style={{ color: 'var(--accent)' }}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+/* ── Build context string for API ── */
+function buildPropertyContext(property: Property): string {
+  return `[PROPERTY CONTEXT] The user is currently viewing: ${property.address}, ${property.city}. ` +
+    `Price: ${formatPrice(property.price)} | ${property.beds}bd/${property.baths}ba | ${property.sqft.toLocaleString()} sqft | ` +
+    `Year Built: ${property.yearBuilt} | Type: ${property.type} | Status: ${property.status} | ` +
+    `ROI: ${property.roi}% | Risk Score: ${property.riskScore}/100 | Zestimate: ${formatPrice(property.zestimate)} | ` +
+    `Days on Market: ${property.daysOnMarket}. ` +
+    `When the user asks questions, they are likely referring to this property unless they specify otherwise.`;
+}
+
 /* ── Main component ── */
-export default function ReportChat({ backgroundImage }: { backgroundImage?: string | null }) {
+export default function ReportChat({
+  selectedProperty,
+  onClearProperty,
+}: {
+  selectedProperty?: Property | null;
+  onClearProperty?: () => void;
+}) {
+  const backgroundImage = selectedProperty?.image ?? null;
   const [messages,      setMessages]      = useState<Message[]>(() => loadMessages());
   const [input,         setInput]         = useState('');
   const [loading,       setLoading]       = useState(false);
@@ -288,10 +341,14 @@ export default function ReportChat({ backgroundImage }: { backgroundImage?: stri
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }));
 
+      // Inject property context if a property is selected
+      const contextPrefix = selectedProperty ? buildPropertyContext(selectedProperty) : '';
+      const enrichedMessage = contextPrefix ? `${contextPrefix}\n\nUser message: ${trimmed}` : trimmed;
+
       const res = await fetch('/api/chat-report', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: trimmed, history }),
+        body:    JSON.stringify({ message: enrichedMessage, history }),
       });
 
       if (!res.ok) {
@@ -329,7 +386,7 @@ export default function ReportChat({ backgroundImage }: { backgroundImage?: stri
       setLoading(false);
       textareaRef.current?.focus();
     }
-  }, [loading, messages]);
+  }, [loading, messages, selectedProperty]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -347,7 +404,7 @@ export default function ReportChat({ backgroundImage }: { backgroundImage?: stri
   return (
     <>
       <div className="flex flex-col h-full relative">
-        {/* Property background image — blurred + faded */}
+        {/* Property background image — clear house photo with dark overlay */}
         {backgroundImage && (
           <div className="absolute inset-0 z-0 overflow-hidden chat-bg-transition">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -355,11 +412,11 @@ export default function ReportChat({ backgroundImage }: { backgroundImage?: stri
               src={backgroundImage}
               alt=""
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ filter: 'blur(28px) saturate(0.6) brightness(0.3)', transform: 'scale(1.15)' }}
+              style={{ opacity: 0.35 }}
             />
-            {/* Dark overlay for readability */}
+            {/* Dark gradient overlay for text readability */}
             <div className="absolute inset-0"
-              style={{ background: 'linear-gradient(180deg, rgba(8,12,20,0.7) 0%, rgba(8,12,20,0.85) 50%, rgba(8,12,20,0.95) 100%)' }} />
+              style={{ background: 'linear-gradient(180deg, rgba(8,12,20,0.5) 0%, rgba(8,12,20,0.7) 40%, rgba(8,12,20,0.9) 100%)' }} />
             {/* Subtle accent glow at top */}
             <div className="absolute inset-0"
               style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(6,182,212,0.06) 0%, transparent 60%)' }} />
@@ -428,23 +485,40 @@ export default function ReportChat({ backgroundImage }: { backgroundImage?: stri
 
           <div className="flex items-end gap-2">
             <div className="flex-1 relative">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask about floor plans, reports, market analysis..."
-                rows={1}
-                disabled={loading}
-                className="w-full resize-none rounded-sm px-3 py-2.5 pr-10 text-[12px] placeholder-text-tertiary focus:outline-none transition-colors overflow-y-auto disabled:opacity-40"
+              {/* Cursor-style context chips + textarea wrapper */}
+              <div className="chat-input-wrapper rounded-sm transition-colors overflow-hidden"
                 style={{
                   background: 'var(--bg-muted)',
-                  color: 'var(--text-primary)',
                   border: '1px solid var(--border)',
-                }}
-                onFocus={e => (e.currentTarget.style.borderColor = 'var(--border-active)')}
-                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-              />
+                }}>
+                {/* Context chip row */}
+                {selectedProperty && (
+                  <div className="px-2.5 pt-2 pb-0.5 flex flex-wrap gap-1.5 items-center">
+                    <PropertyContextChip
+                      property={selectedProperty}
+                      onRemove={onClearProperty ?? (() => {})}
+                    />
+                  </div>
+                )}
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={selectedProperty
+                    ? `Ask about ${selectedProperty.address}...`
+                    : 'Ask about floor plans, reports, market analysis...'}
+                  rows={1}
+                  disabled={loading}
+                  className="w-full resize-none px-3 py-2.5 pr-10 text-[12px] placeholder-text-tertiary focus:outline-none transition-colors overflow-y-auto disabled:opacity-40"
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--text-primary)',
+                    border: 'none',
+                    outline: 'none',
+                  }}
+                />
+              </div>
               <span className="absolute right-3 bottom-2.5 text-[9px] font-mono select-none" style={{ color: 'var(--text-tertiary)' }}>
                 &crarr;
               </span>

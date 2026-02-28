@@ -28,7 +28,10 @@ export default function ReportsPage() {
         {/* Center — multimodal chat */}
         <div className="flex-1 flex flex-col overflow-hidden"
           style={{ background: 'var(--bg-body)' }}>
-          <ReportChat backgroundImage={selectedProperty?.image ?? null} />
+          <ReportChat
+            selectedProperty={selectedProperty}
+            onClearProperty={() => setSelectedProperty(null)}
+          />
         </div>
       </div>
 
