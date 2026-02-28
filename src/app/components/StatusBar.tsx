@@ -17,13 +17,15 @@ export default function StatusBar() {
       style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}>
       <div className="flex items-center gap-3 text-[10px] text-text-tertiary">
         <div className="flex items-center gap-1">
-          <div className="w-[4px] h-[4px] status-live" style={{ background: 'var(--green)' }} />
+          <div className="w-[4px] h-[4px] rounded-full status-live" style={{ background: 'var(--green)' }} />
           <span>Operational</span>
         </div>
-        <span>&middot;</span>
-        <span>Orange County, CA</span>
-        <span>&middot;</span>
-        <span>8 feeds</span>
+        <span style={{ color: 'var(--border)' }}>&middot;</span>
+        <span>United States</span>
+        <span style={{ color: 'var(--border)' }}>&middot;</span>
+        <span>78 metros</span>
+        <span style={{ color: 'var(--border)' }}>&middot;</span>
+        <span>32 feeds</span>
       </div>
       <div className="font-mono text-[10px] text-text-tertiary">{time}</div>
     </div>

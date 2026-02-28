@@ -44,3 +44,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated artifacts (PDFs, panoramas, 3D models, videos)
+public/generated/*
+!public/generated/.gitkeep
+
+# sqlite databases
+*.db
+*.db-shm
+*.db-wal
