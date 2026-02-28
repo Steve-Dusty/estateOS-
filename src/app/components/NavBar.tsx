@@ -5,11 +5,10 @@ import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
   { label: 'Overview', href: '/' },
-  { label: 'World Builder', href: '/world-builder' },
   { label: 'Intelligence', href: '/intelligence' },
   { label: 'Reports', href: '/reports' },
   { label: 'Analytics', href: '#' },
-  { label: 'Portfolio', href: '#' },
+  { label: 'Portfolio', href: '/portfolio' },
 ];
 
 export default function NavBar() {
@@ -48,6 +47,24 @@ export default function NavBar() {
               </Link>
             );
           })}
+
+          <div className="h-4 w-px mx-1" style={{ background: 'var(--border)' }} />
+
+          <Link href="/client"
+            className={`px-2.5 py-1 text-[12px] font-medium rounded-sm transition-all flex items-center gap-1.5
+              ${pathname === '/client'
+                ? 'text-white'
+                : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted'
+              }`}
+            style={{
+              background: pathname === '/client' ? 'rgba(124,58,237,0.8)' : 'transparent',
+            }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+            Client
+          </Link>
         </div>
       </div>
 

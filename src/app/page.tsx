@@ -16,6 +16,7 @@ export default function Dashboard() {
 
   const handleSelectProperty = useCallback((property: Property) => {
     setSelectedProperty(property);
+    setModalProperty(property);
   }, []);
 
   const handleMapSelectProperty = useCallback((property: Property) => {
