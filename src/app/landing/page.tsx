@@ -360,8 +360,8 @@ function LiveFeed() {
       {events.map((e) => (
         <div key={e.id} className="flex items-start gap-3 py-2 px-3 transition-all"
           style={{ borderLeft: `2px solid ${e.color}40`, animation: 'fadeUp 0.3s ease forwards' }}>
-          <span className="text-[10px] text-white shrink-0 mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{e.time}</span>
-          <span className="text-[12px] text-white leading-snug">{e.text}</span>
+          <span className="text-[10px] shrink-0 mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ffffff', textShadow: '0 0 8px rgba(255,255,255,0.5)' }}>{e.time}</span>
+          <span className="text-[12px] leading-snug" style={{ color: '#ffffff', textShadow: '0 0 8px rgba(255,255,255,0.4)' }}>{e.text}</span>
         </div>
       ))}
     </div>
@@ -527,7 +527,13 @@ function DotMatrixSubheading({ text, maxWidth = 600 }: { text: string; maxWidth?
   useEffect(() => {
     const canvas = ref.current; if (!canvas) return;
     const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+
+    let animId = 0;
+    let cancelled = false;
+
     document.fonts.ready.then(() => {
+      if (cancelled) return;
+
       const off = document.createElement('canvas');
       const oc = off.getContext('2d'); if (!oc) return;
       const fontSize = 36;
@@ -545,26 +551,54 @@ function DotMatrixSubheading({ text, maxWidth = 600 }: { text: string; maxWidth?
       const step = 3;
       const cols = Math.ceil(off.width / step);
       const rows = Math.ceil(off.height / step);
+      const dotR = 1.5;
+
       canvas.width = cols * step;
       canvas.height = rows * step;
       setRatio(canvas.width / canvas.height);
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      interface Dot { x: number; y: number; a: number; delay: number }
+      const dots: Dot[] = [];
       for (let gy = 0; gy < rows; gy++) {
         for (let gx = 0; gx < cols; gx++) {
           const sx = gx * step, sy = gy * step;
           if (sx < off.width && sy < off.height) {
-            const a = data[(sy * off.width + sx) * 4 + 3];
-            if (a > 60) {
-              ctx.beginPath();
-              ctx.arc(gx * step + step / 2, gy * step + step / 2, 1, 0, Math.PI * 2);
-              ctx.fillStyle = `rgba(255,255,255,${Math.min(a / 255, 1)})`;
-              ctx.fill();
+            const alpha = data[(sy * off.width + sx) * 4 + 3];
+            if (alpha > 60) {
+              dots.push({
+                x: gx * step + step / 2,
+                y: gy * step + step / 2,
+                a: Math.min(alpha / 255, 1),
+                delay: (gx / cols) * 600 + Math.random() * 200,
+              });
             }
           }
         }
       }
+
+      const cw = canvas.width, ch = canvas.height;
+      const start = performance.now();
+      function draw(now: number) {
+        if (cancelled) return;
+        const t = now - start;
+        ctx.clearRect(0, 0, cw, ch);
+        let done = true;
+        for (const d of dots) {
+          const progress = t > d.delay ? Math.min((t - d.delay) / 350, 1) : 0;
+          if (progress < 1) done = false;
+          if (progress > 0) {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, dotR, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${d.a * progress})`;
+            ctx.fill();
+          }
+        }
+        if (!done) animId = requestAnimationFrame(draw);
+      }
+      animId = requestAnimationFrame(draw);
     });
+
+    return () => { cancelled = true; cancelAnimationFrame(animId); };
   }, [text]);
 
   return <canvas ref={ref} style={{ maxWidth, height: 'auto', aspectRatio: ratio, display: 'block' }} />;
@@ -611,7 +645,7 @@ export default function LandingPage() {
 
       {/* ════════════════════ NAVIGATION ════════════════════ */}
       <nav className="relative z-[5] flex items-center justify-center px-10 py-5"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', background: '#000' }}>
         <Link href="/landing" className="text-[20px] font-bold text-white tracking-[0.3em] uppercase"
           style={{ fontFamily: "'JetBrains Mono', monospace" }}>
           EstateOS
@@ -625,19 +659,18 @@ export default function LandingPage() {
         <div className="relative z-10 flex flex-col items-center">
           <DotMatrixHeading lines={['The intelligence layer', 'for real estate']} maxWidth={920} />
 
-          <p className="text-center max-w-[640px] text-white text-[15px] leading-relaxed mt-8 mb-14 tracking-wide">
-            Our AI aggregates market signals, removes noise, and delivers only
-            what&apos;s actionable at scale and in real time.
+          <p className="text-center max-w-[640px] text-[15px] leading-relaxed mt-8 mb-14 tracking-wide" style={{ color: '#ffffff' }}>
+            A multimodal, voice-driven AI ecosystem that turns real-time walkthroughs into actionable client intelligence and immersive property experiences
           </p>
 
           <div className="flex items-center gap-5">
             <Link href="/"
               className="text-[13px] px-8 py-3 border border-white/60 hover:border-white hover:bg-white/[0.15] text-white tracking-wide transition-all backdrop-blur-sm">
-              Enter agent view
+              Enter Agent View
             </Link>
             <Link href="/client"
               className="text-[13px] px-8 py-3 border border-white/60 hover:border-white hover:bg-white/[0.15] text-white tracking-wide transition-all backdrop-blur-sm">
-              Client view
+              Enter Client View
             </Link>
           </div>
         </div>
@@ -657,7 +690,7 @@ export default function LandingPage() {
       <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ STATS — Animated counters ════════════════════ */}
-      <Reveal>
+      <Reveal className="relative z-10">
         <section className="relative z-10 mx-6 py-20">
           <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
             {[
@@ -668,10 +701,10 @@ export default function LandingPage() {
             ].map((s, i) => (
               <Reveal key={s.label} delay={i * 0.1}>
                 <div className="text-center">
-                  <div className="text-3xl md:text-4xl mb-2 text-white" style={{ fontFamily: "'JetBrains Mono', monospace", textShadow: '0 2px 12px rgba(0,0,0,0.5)' }}>
+                  <div className="text-3xl md:text-4xl mb-2" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ffffff', textShadow: '0 0 20px rgba(255,255,255,0.6), 0 0 40px rgba(255,255,255,0.2)' }}>
                     {s.prefix || ''}<Counter target={s.target} />{s.suffix}
                   </div>
-                  <div className="text-[11px] text-white tracking-[0.2em] uppercase">{s.label}</div>
+                  <div className="text-[11px] tracking-[0.2em] uppercase" style={{ color: '#ffffff', textShadow: '0 0 10px rgba(255,255,255,0.4)' }}>{s.label}</div>
                 </div>
               </Reveal>
             ))}
@@ -682,11 +715,11 @@ export default function LandingPage() {
       <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ INTERACTIVE DEMO ════════════════════ */}
-      <Reveal>
+      <Reveal className="relative z-10">
         <section className="relative z-10 mx-6 py-24">
           <div className="max-w-6xl mx-auto">
-            <p className="text-[11px] tracking-[0.25em] text-white uppercase mb-4">Live Demo</p>
-            <div className="mb-12">
+            <p className="text-[14px] tracking-[0.25em] uppercase mb-4" style={{ color: '#ffffff', textShadow: '0 0 12px rgba(255,255,255,0.9), 0 0 24px rgba(255,255,255,0.4)' }}>Live Demo</p>
+            <div className="mb-12" style={{ filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.5))' }}>
               <DotMatrixSubheading text="Intelligence in motion" maxWidth={500} />
             </div>
 
@@ -695,7 +728,7 @@ export default function LandingPage() {
               <div className="p-8">
                 <div className="flex items-center gap-2 mb-6">
                   <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-[10px] tracking-[0.2em] text-white uppercase" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span className="text-[10px] tracking-[0.2em] uppercase" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ffffff', textShadow: '0 0 8px rgba(255,255,255,0.5)' }}>
                     Real-time feed
                   </span>
                 </div>
@@ -706,7 +739,7 @@ export default function LandingPage() {
               <div className="p-8" style={{ borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
                 <div className="flex items-center gap-2 mb-6">
                   <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
-                  <span className="text-[10px] tracking-[0.2em] text-white uppercase" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span className="text-[10px] tracking-[0.2em] uppercase" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ffffff', textShadow: '0 0 8px rgba(255,255,255,0.5)' }}>
                     Signal map — Orange County
                   </span>
                 </div>
@@ -723,7 +756,7 @@ export default function LandingPage() {
       <section id="features" className="relative z-10 mx-6 py-24">
         <Reveal>
           <div className="max-w-5xl mx-auto mb-16 text-center">
-            <p className="text-[11px] tracking-[0.25em] text-white uppercase mb-4">Capabilities</p>
+            <p className="text-[14px] tracking-[0.25em] uppercase mb-4" style={{ color: '#ffffff', textShadow: '0 0 12px rgba(255,255,255,0.9), 0 0 24px rgba(255,255,255,0.4)' }}>Capabilities</p>
             <DotMatrixSubheading text="Built for operators" maxWidth={440} />
           </div>
         </Reveal>
@@ -752,11 +785,11 @@ export default function LandingPage() {
       <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ ARCHITECTURE PIPELINE ════════════════════ */}
-      <Reveal>
+      <Reveal className="relative z-10">
         <section className="relative z-10 mx-6 py-24">
           <div className="max-w-5xl mx-auto">
-            <p className="text-[11px] tracking-[0.25em] text-white uppercase mb-4">Architecture</p>
-            <div className="mb-14">
+            <p className="text-[14px] tracking-[0.25em] uppercase mb-4" style={{ color: '#ffffff', textShadow: '0 0 12px rgba(255,255,255,0.9), 0 0 24px rgba(255,255,255,0.4)' }}>Architecture</p>
+            <div className="mb-14" style={{ filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.5))' }}>
               <DotMatrixSubheading text="Signal to decision in milliseconds" maxWidth={620} />
             </div>
 
@@ -771,13 +804,13 @@ export default function LandingPage() {
                 <Reveal key={s.step} delay={i * 0.1}>
                   <div className="flex flex-col items-center py-10 relative hover:bg-white/[0.04] transition-colors"
                     style={{ borderRight: i < 4 ? '1px solid rgba(255,255,255,0.08)' : 'none' }}>
-                    <span className="text-[10px] text-white tracking-widest mb-3"
-                      style={{ fontFamily: "'JetBrains Mono', monospace" }}>{s.step}</span>
-                    <span className="text-sm text-white mb-1.5">{s.title}</span>
-                    <span className="text-[11px] text-white">{s.desc}</span>
+                    <span className="text-[10px] tracking-widest mb-3"
+                      style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ffffff', textShadow: '0 0 8px rgba(255,255,255,0.5)' }}>{s.step}</span>
+                    <span className="text-sm mb-1.5" style={{ color: '#ffffff', textShadow: '0 0 10px rgba(255,255,255,0.5)' }}>{s.title}</span>
+                    <span className="text-[11px]" style={{ color: '#ffffff', textShadow: '0 0 8px rgba(255,255,255,0.4)' }}>{s.desc}</span>
                     {i < 4 && (
                       <div className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 w-5 h-5 rounded-full border border-white/15 items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
-                        <span className="text-[8px] text-white">{s.icon}</span>
+                        <span className="text-[8px]" style={{ color: '#ffffff' }}>{s.icon}</span>
                       </div>
                     )}
                   </div>
@@ -791,7 +824,7 @@ export default function LandingPage() {
       <div className="mx-6" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
 
       {/* ════════════════════ FOOTER ════════════════════ */}
-      <footer className="relative z-10 mx-6 py-10 flex flex-col md:flex-row items-center justify-between gap-4">
+      <footer className="relative z-10 px-10 py-10 flex flex-col md:flex-row items-center justify-between gap-4" style={{ background: '#000' }}>
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-full border border-white/15 flex items-center justify-center">
             <span className="text-[9px] font-bold" style={{ fontFamily: "'JetBrains Mono', monospace" }}>ES</span>
