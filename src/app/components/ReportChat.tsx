@@ -12,6 +12,7 @@ export interface Message {
   content: string;
   type: MessageType;
   imageUrl?: string;
+  imageFilename?: string;
   pdfUrl?: string;
   pdfFilename?: string;
   intent?: string;
@@ -346,8 +347,10 @@ export default function ReportChat({
       const contextPrefix = selectedProperty ? buildPropertyContext(selectedProperty) : '';
       const enrichedMessage = contextPrefix ? `${contextPrefix}\n\nUser message: ${trimmed}` : trimmed;
 
-      // Find the most recent PDF from conversation for potential email attachment
-      const lastPdf = [...messages].reverse().find(m => m.type === 'pdf' && m.pdfUrl);
+      // Find the most recent PDF and schematic for potential email attachments
+      const reversed = [...messages].reverse();
+      const lastPdf   = reversed.find(m => m.type === 'pdf'   && m.pdfFilename);
+      const lastImage = reversed.find(m => m.type === 'image' && m.imageFilename);
 
       const res = await fetch('/api/chat-report', {
         method:  'POST',
@@ -355,8 +358,8 @@ export default function ReportChat({
         body:    JSON.stringify({
           message: enrichedMessage,
           history,
-          lastPdfUrl: lastPdf?.pdfUrl,
-          lastPdfFilename: lastPdf?.pdfFilename,
+          lastPdfFilename:   lastPdf?.pdfFilename,
+          lastImageFilename: lastImage?.imageFilename,
         }),
       });
 
@@ -368,14 +371,15 @@ export default function ReportChat({
       const data = await res.json();
 
       const assistantMsg: Message = {
-        id:          crypto.randomUUID(),
-        role:        'assistant',
-        content:     data.message ?? '',
-        type:        data.type as MessageType,
-        imageUrl:    data.imageUrl,
-        pdfUrl:      data.pdfUrl,
-        pdfFilename: data.pdfFilename,
-        intent:      data.intent,
+        id:            crypto.randomUUID(),
+        role:          'assistant',
+        content:       data.message ?? '',
+        type:          data.type as MessageType,
+        imageUrl:      data.imageUrl,
+        imageFilename: data.imageFilename,
+        pdfUrl:        data.pdfUrl,
+        pdfFilename:   data.pdfFilename,
+        intent:        data.intent,
       };
 
       setMessages(prev => [...prev, assistantMsg]);

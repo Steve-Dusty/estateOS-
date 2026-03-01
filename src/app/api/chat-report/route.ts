@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { Composio } from '@composio/core';
+import { mkdirSync, writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { randomBytes } from 'crypto';
 import { buildPdf } from '@/app/lib/pdf-builder';
 import { getDb } from '@/lib/db';
 
@@ -16,6 +19,8 @@ const GENERATED_ASSETS_URL = process.env.GENERATED_ASSETS_URL ?? '/generated';
 const _BASE          = 'https://generativelanguage.googleapis.com/v1beta/models';
 const IMAGEN_URL     = `${_BASE}/${IMAGEN_MODEL}:predict?key=${process.env.GOOGLE_API_KEY}`;
 const GEMINI_IMG_URL = `${_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${process.env.GOOGLE_API_KEY}`;
+
+const GENERATED_ASSETS_DIR = process.env.GENERATED_ASSETS_DIR ?? join(process.cwd(), 'public', 'generated');
 
 interface HistoryItem {
   role: string;
@@ -77,10 +82,19 @@ async function generateSchematic(subject: string): Promise<object> {
       const imagenData = await imagenRes.json();
       const pred       = imagenData.predictions?.[0];
       if (pred?.bytesBase64Encoded) {
+        const mimeType        = pred.mimeType ?? 'image/png';
+        const ext             = mimeType.split('/')[1] ?? 'png';
+        const imageFilename   = `schematic_${randomBytes(4).toString('hex')}.${ext}`;
+        mkdirSync(GENERATED_ASSETS_DIR, { recursive: true });
+        writeFileSync(
+          join(GENERATED_ASSETS_DIR, imageFilename),
+          Buffer.from(pred.bytesBase64Encoded, 'base64'),
+        );
         return {
-          type:     'image',
-          imageUrl: `data:${pred.mimeType ?? 'image/png'};base64,${pred.bytesBase64Encoded}`,
-          message:  `Here is the schematic for: ${subject}`,
+          type:          'image',
+          imageUrl:      `data:${mimeType};base64,${pred.bytesBase64Encoded}`,
+          imageFilename,
+          message:       `Here is the schematic for: ${subject}`,
         };
       }
     }
@@ -102,10 +116,19 @@ async function generateSchematic(subject: string): Promise<object> {
 
       for (const part of parts) {
         if (part.inlineData) {
+          const mimeType      = part.inlineData.mimeType ?? 'image/png';
+          const ext           = mimeType.split('/')[1] ?? 'png';
+          const imageFilename = `schematic_${randomBytes(4).toString('hex')}.${ext}`;
+          mkdirSync(GENERATED_ASSETS_DIR, { recursive: true });
+          writeFileSync(
+            join(GENERATED_ASSETS_DIR, imageFilename),
+            Buffer.from(part.inlineData.data, 'base64'),
+          );
           return {
-            type:     'image',
-            imageUrl: `data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`,
-            message:  `Here is the schematic for: ${subject}`,
+            type:          'image',
+            imageUrl:      `data:${mimeType};base64,${part.inlineData.data}`,
+            imageFilename,
+            message:       `Here is the schematic for: ${subject}`,
           };
         }
       }
@@ -340,15 +363,20 @@ const composio = new Composio({ apiKey: process.env.COMPOSIO_API_KEY! });
 async function sendEmail(
   message: string,
   propertyContext: string,
-  lastPdfUrl?: string,
   lastPdfFilename?: string,
+  lastImageFilename?: string,
 ): Promise<object> {
   // 1. Use GPT to extract email fields from user message
+  const attachmentHints = [
+    lastPdfFilename   ? `A PDF report is available for attachment: ${lastPdfFilename}` : '',
+    lastImageFilename ? `A schematic image is available for attachment: ${lastImageFilename}` : '',
+  ].filter(Boolean).join('\n');
+
   const extractionPrompt = `Extract the email details from this user message. The user may or may not provide all fields.
 If subject or body is not explicitly provided, generate appropriate ones based on the context.
 
 ${propertyContext ? `Property context: ${propertyContext}` : ''}
-${lastPdfUrl ? `A PDF report is available: ${lastPdfFilename}` : ''}
+${attachmentHints}
 
 User message: ${message}
 
@@ -378,14 +406,39 @@ Respond ONLY with JSON:
     return { type: 'text', message: 'Could not determine the recipient email address. Please specify who to send the email to.' };
   }
 
-  // 2. Send via Composio
+  // 2. Replace GPT-generated signature with the canonical EstateOS one
+  const SIGNATURE_HTML = '<p>Best regards,<br>EstateOS Team</p>';
+  const bodyWithSignature = body
+    // Replace any "Best regards / Sincerely / …, <anything>" closing block
+    .replace(/<p>(?:Best regards|Sincerely|Kind regards|Regards|Warm regards|Cheers)[\s\S]*?<\/p>/gi, SIGNATURE_HTML)
+    // Fallback: if no block was replaced, append the signature
+    || `${body}${SIGNATURE_HTML}`;
+
+  // 3. Resolve a single attachment path.
+  //    GMAIL_SEND_EMAIL exposes one `attachment` field (singular) that is
+  //    marked file_uploadable in Composio's schema. The SDK reads the local
+  //    path, uploads the file to S3, and passes the resulting S3 key to
+  //    Gmail — so we just need to hand over an absolute filesystem path.
+  //    Priority: PDF > image (both stored in GENERATED_ASSETS_DIR).
+  function resolveAttachmentPath(filename: string): string | null {
+    const p = join(GENERATED_ASSETS_DIR, filename);
+    return existsSync(p) ? p : null;
+  }
+
+  const attachmentPath =
+    (lastPdfFilename   && resolveAttachmentPath(lastPdfFilename))   ||
+    (lastImageFilename && resolveAttachmentPath(lastImageFilename)) ||
+    null;
+
+  // 4. Send via Composio
   const result = await composio.tools.execute('GMAIL_SEND_EMAIL', {
-    userId: 'default',
+    userId: process.env.COMPOSIO_USER_ID ?? 'default',
     arguments: {
       recipient_email: to,
-      subject: subject ?? 'Property Information from EstateOS',
-      body,
-      is_html: true,
+      subject:         subject ?? 'Property Information from EstateOS',
+      body:            bodyWithSignature,
+      is_html:         true,
+      ...(attachmentPath && { attachment: attachmentPath }),
     },
     dangerouslySkipVersionCheck: true,
   });
@@ -394,12 +447,13 @@ Respond ONLY with JSON:
     return { type: 'text', message: `Failed to send email: ${result.data.error}` };
   }
 
-  return { type: 'text', message: `Email sent successfully to ${to}!\n\nSubject: ${subject}` };
+  const attachedNote = attachmentPath ? ' with 1 attachment' : '';
+  return { type: 'text', message: `Email sent successfully to ${to}${attachedNote}!\n\nSubject: ${subject}` };
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, history = [], lastPdfUrl, lastPdfFilename } = await request.json();
+    const { message, history = [], lastPdfFilename, lastImageFilename } = await request.json();
     const [intent, subject] = await classifyIntent(message, history);
 
     let result: object;
@@ -410,7 +464,7 @@ export async function POST(request: NextRequest) {
     } else if (intent === 'pdf_report') {
       result = await generatePdfReport(message);
     } else if (intent === 'email') {
-      result = await sendEmail(message, '', lastPdfUrl, lastPdfFilename);
+      result = await sendEmail(message, '', lastPdfFilename, lastImageFilename);
     } else {
       result = await generateChatResponse(message, history);
     }
