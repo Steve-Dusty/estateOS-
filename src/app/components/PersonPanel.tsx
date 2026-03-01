@@ -8,9 +8,10 @@ import MediaGallery from './MediaGallery';
 interface Props {
   node: GraphNode | null;
   onClose: () => void;
+  onNavigate?: (name: string) => void;
 }
 
-export default function PersonPanel({ node, onClose }: Props) {
+export default function PersonPanel({ node, onClose, onNavigate }: Props) {
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'conversations' | 'topics' | 'media'>('conversations');
@@ -131,6 +132,7 @@ export default function PersonPanel({ node, onClose }: Props) {
               <ConversationThread
                 conversations={detail.conversations}
                 personName={detail.person.name}
+                onSpeakerClick={onNavigate}
               />
             )}
             {activeTab === 'topics' && (

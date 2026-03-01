@@ -55,7 +55,7 @@ async function extractEntitiesWithGemini(messages: ParsedMessage[]): Promise<Ext
   try {
     const ai = getGenAI();
     if (!ai) return { persons: [], topics: [], relationships: [] };
-    const model = ai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `Analyze this conversation and extract:
 1. **People mentioned** (names of real people discussed or participating, NOT "Assistant" or "AI")
@@ -174,8 +174,12 @@ export async function processMessages(
         timestamp: messages[0].timestamp,
       });
 
-      if (isNew && !knownPersonIds.has(id)) {
-        result.newNodes.push(personToNode(id));
+      if (!knownPersonIds.has(id)) {
+        if (isNew) {
+          result.newNodes.push(personToNode(id));
+        } else {
+          result.updatedNodes.push(personToNode(id));
+        }
         const linkIsNew = upsertRelationship(STEVE_ID, id, 'talked_to', messages[0].timestamp);
         if (linkIsNew) {
           result.newLinks.push({
@@ -184,6 +188,21 @@ export async function processMessages(
             type: 'talked_to',
             weight: 1,
           });
+        } else {
+          result.updatedLinks.push({
+            source: `person-${STEVE_ID}`,
+            target: `person-${id}`,
+            type: 'talked_to',
+            weight: 1,
+          });
+        }
+
+        // Link conversations to this person (for sources like ElevenLabs
+        // where no speaker was provided upfront — Gemini found the name)
+        for (const msg of messages) {
+          if (msg.role === 'user') {
+            insertConversation(sessionId, id, msg.role, msg.content, msg.timestamp, msg.sender?.sender_id);
+          }
         }
       }
       knownPersonIds.add(id);

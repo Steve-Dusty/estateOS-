@@ -1,0 +1,40 @@
+{
+  "name": "livekit",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "agent": "tsx agent.ts dev",
+    "download-files": "tsx agent.ts download-files"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.0.48",
+    "@livekit/agents-plugin-hedra": "^1.0.48",
+    "@livekit/agents-plugin-livekit": "^1.0.48",
+    "@livekit/agents-plugin-silero": "^1.0.48",
+    "@livekit/components-react": "^2.9.20",
+    "@livekit/components-styles": "^1.2.0",
+    "@livekit/noise-cancellation-node": "^0.1.9",
+    "@livekit/protocol": "^1.44.1",
+    "dotenv": "^17.3.1",
+    "livekit-client": "^2.17.2",
+    "livekit-server-sdk": "^2.15.0",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

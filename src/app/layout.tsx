@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import VoiceAssistant from "./components/VoiceAssistant";
 
 export const metadata: Metadata = {
   title: "EstateOS — Real Estate Intelligence",
@@ -24,6 +25,7 @@ export default function RootLayout({
       </head>
       <body>
         {children}
+        <VoiceAssistant />
       </body>
     </html>
   );

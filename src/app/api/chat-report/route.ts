@@ -25,13 +25,14 @@ interface HistoryItem {
 const INTENT_SYSTEM = `You are an intent classifier for a real estate AI assistant.
 
 Given a user message, classify it into EXACTLY one of these intents:
+- "navigate": The user wants to go to / open / navigate to a specific page. Set "subject" to the page name (one of: overview, intelligence, reports, portfolio, client).
 - "schematic": The user wants a floor plan, architectural schematic, property layout, building diagram, or any visual/spatial representation of a property.
 - "pdf_report": The user wants a comprehensive written report, market analysis, property valuation, investment analysis, CMA (Comparative Market Analysis), or any document-style output.
 - "email": The user wants to send an email to someone. They may specify a recipient, subject, and content.
 - "chat": General real estate questions, advice, conversational queries that need a text answer.
 
 Respond ONLY with a JSON object — no markdown, no explanation:
-{"intent": "schematic|pdf_report|email|chat", "subject": "brief description of what to generate"}`;
+{"intent": "navigate|schematic|pdf_report|email|chat", "subject": "brief description or page name"}`;
 
 async function classifyIntent(
   message: string,
@@ -402,7 +403,9 @@ export async function POST(request: NextRequest) {
     const [intent, subject] = await classifyIntent(message, history);
 
     let result: object;
-    if (intent === 'schematic') {
+    if (intent === 'navigate') {
+      result = { type: 'navigate', page: subject, message: `Navigating to ${subject}…` };
+    } else if (intent === 'schematic') {
       result = await generateSchematic(subject);
     } else if (intent === 'pdf_report') {
       result = await generatePdfReport(message);

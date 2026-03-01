@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processMessages } from '@/lib/entity-extractor';
 import { getOrCreateSession, updateSessionProgress } from '@/lib/db';
-import { broadcastGraphDelta, broadcastConversation } from '@/lib/socket-server';
+import { broadcastGraphDelta, broadcastConversation, broadcastTopic } from '@/lib/socket-server';
 import type { ParsedMessage } from '@/types/openclaw';
 
 /**
@@ -30,15 +30,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing or empty turns array' }, { status: 400 });
     }
 
-    // Only accept glasses and phone conversations (not telegram, webchat, etc.)
-    const allowedSources = ['glasses', 'phone'];
+    // Only accept glasses, phone, and elevenlabs conversations
+    const allowedSources = ['glasses', 'phone', 'elevenlabs'];
     if (source && !allowedSources.includes(source)) {
-      return NextResponse.json({ error: 'Only glasses and phone conversations are tracked' }, { status: 400 });
+      return NextResponse.json({ error: 'Only glasses, phone, and elevenlabs conversations are tracked' }, { status: 400 });
     }
 
-    // Require a named speaker (the person the user is talking to)
+    // Require a named speaker (elevenlabs uses diarized speaker IDs)
     const hasSpeaker = speaker || turns.some((t: { speaker?: string }) => t.speaker);
-    if (!hasSpeaker) {
+    if (!hasSpeaker && source !== 'elevenlabs') {
       return NextResponse.json({ error: 'A named speaker is required' }, { status: 400 });
     }
 
@@ -77,6 +77,17 @@ export async function POST(req: NextRequest) {
 
     if (delta.newNodes.length || delta.updatedNodes.length || delta.newLinks.length || delta.updatedLinks.length) {
       broadcastGraphDelta(delta);
+    }
+
+    // Broadcast new topics to the topic stream
+    for (const node of delta.newNodes) {
+      if (node.type === 'topic') {
+        broadcastTopic({
+          name: node.name,
+          source: sessionType,
+          timestamp: now,
+        });
+      }
     }
 
     // Broadcast each conversation turn to the live stream

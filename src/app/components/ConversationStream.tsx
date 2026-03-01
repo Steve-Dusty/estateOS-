@@ -11,6 +11,7 @@ const SOURCE_COLORS: Record<string, string> = {
   glasses: 'var(--amber)',
   telegram: '#0088cc',
   webchat: 'var(--accent)',
+  elevenlabs: '#8b5cf6',
   unknown: 'var(--text-tertiary)',
 };
 
@@ -18,6 +19,7 @@ const SOURCE_LABELS: Record<string, string> = {
   glasses: 'GLASSES',
   telegram: 'TELEGRAM',
   webchat: 'WEB',
+  elevenlabs: 'ELEVENLABS',
   unknown: 'OTHER',
 };
 

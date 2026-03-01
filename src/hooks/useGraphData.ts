@@ -12,11 +12,18 @@ export interface ConversationEvent {
   timestamp: string;
 }
 
+export interface TopicEvent {
+  name: string;
+  source: string;
+  timestamp: string;
+}
+
 export function useGraphData() {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [stats, setStats] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [conversations, setConversations] = useState<ConversationEvent[]>([]);
+  const [topics, setTopics] = useState<TopicEvent[]>([]);
   const initializedRef = useRef(false);
 
   const mergeNode = useCallback((node: GraphNode, isNew: boolean) => {
@@ -71,6 +78,9 @@ export function useGraphData() {
     onConversation: (event: ConversationEvent) => {
       setConversations(prev => [event, ...prev].slice(0, 200));
     },
+    onTopic: (event: TopicEvent) => {
+      setTopics(prev => [event, ...prev].slice(0, 200));
+    },
   });
 
   // Fallback: fetch via REST if WebSocket hasn't initialized after 3s
@@ -106,5 +116,5 @@ export function useGraphData() {
       .catch(() => {});
   }, []);
 
-  return { graphData, stats, loading, connected, conversations };
+  return { graphData, stats, loading, connected, conversations, topics };
 }

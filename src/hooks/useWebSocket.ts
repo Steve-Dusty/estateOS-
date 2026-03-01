@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { GraphData, GraphNode, GraphLink } from '@/types/graph';
-import type { ConversationEvent } from './useGraphData';
+import type { ConversationEvent, TopicEvent } from './useGraphData';
 
 type EventHandler = {
   onInit?: (data: { graph: GraphData }) => void;
@@ -12,6 +12,7 @@ type EventHandler = {
   onLinkAdded?: (data: { link: GraphLink }) => void;
   onLinkUpdated?: (data: { link: GraphLink }) => void;
   onConversation?: (event: ConversationEvent) => void;
+  onTopic?: (event: TopicEvent) => void;
 };
 
 export function useWebSocket(handlers: EventHandler) {
@@ -61,6 +62,10 @@ export function useWebSocket(handlers: EventHandler) {
 
     socket.on('conversation:new', (event: ConversationEvent) => {
       handlersRef.current.onConversation?.(event);
+    });
+
+    socket.on('topic:new', (event: TopicEvent) => {
+      handlersRef.current.onTopic?.(event);
     });
 
     return () => {

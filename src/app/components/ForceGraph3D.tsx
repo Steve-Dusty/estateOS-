@@ -13,11 +13,12 @@ const ForceGraph3DComponent = dynamic(
 interface Props {
   graphData: GraphData;
   onNodeClick?: (node: GraphNode) => void;
+  focusNodeId?: string | null;
   width: number;
   height: number;
 }
 
-export default function ForceGraph3D({ graphData, onNodeClick, width, height }: Props) {
+export default function ForceGraph3D({ graphData, onNodeClick, focusNodeId, width, height }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
 
@@ -39,6 +40,27 @@ export default function ForceGraph3D({ graphData, onNodeClick, width, height }: 
     }, 600);
     return () => clearTimeout(timer);
   }, [graphData.nodes.length]);
+
+  // Programmatic focus: animate camera to a node by ID
+  useEffect(() => {
+    if (!focusNodeId) return;
+    const fg = fgRef.current;
+    if (!fg) return;
+    // The force-graph stores internal nodes with x/y/z positions
+    const internalNodes = fg.graphData?.()?.nodes;
+    if (!internalNodes) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const node = internalNodes.find((n: any) => n.id === focusNodeId);
+    if (!node) return;
+
+    const distance = 200;
+    const distRatio = 1 + distance / Math.hypot(node.x || 0, node.y || 0, node.z || 0);
+    fg.cameraPosition(
+      { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
+      { x: node.x || 0, y: node.y || 0, z: node.z || 0 },
+      1000
+    );
+  }, [focusNodeId]);
 
   const data = useMemo(() => ({
     nodes: graphData.nodes.map(n => ({ ...n })),

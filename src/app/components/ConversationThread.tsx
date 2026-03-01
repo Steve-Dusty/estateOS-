@@ -5,9 +5,10 @@ import type { ConversationRow } from '@/types/graph';
 interface Props {
   conversations: ConversationRow[];
   personName: string;
+  onSpeakerClick?: (name: string) => void;
 }
 
-export default function ConversationThread({ conversations, personName }: Props) {
+export default function ConversationThread({ conversations, personName, onSpeakerClick }: Props) {
   if (conversations.length === 0) {
     return (
       <div className="text-slate-500 text-sm italic p-4">
@@ -35,9 +36,12 @@ export default function ConversationThread({ conversations, personName }: Props)
             }`}
           >
             <div className="flex items-center gap-2 mb-1">
-              <span className={`text-xs font-medium ${
-                isUser ? (isSteve ? 'text-amber-400' : 'text-cyan-400') : 'text-slate-400'
-              }`}>
+              <span
+                className={`text-xs font-medium cursor-pointer hover:underline ${
+                  isUser ? (isSteve ? 'text-amber-400' : 'text-cyan-400') : 'text-slate-400'
+                }`}
+                onClick={() => onSpeakerClick?.(speaker)}
+              >
                 {speaker}
               </span>
               <span className="text-xs text-slate-600">

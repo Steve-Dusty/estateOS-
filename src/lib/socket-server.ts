@@ -73,4 +73,12 @@ export function broadcastConversation(event: {
   getIO()?.emit('conversation:new', event);
 }
 
+export function broadcastTopic(event: {
+  name: string;
+  source: string;
+  timestamp: string;
+}): void {
+  getIO()?.emit('topic:new', event);
+}
+
 export { getIO };
