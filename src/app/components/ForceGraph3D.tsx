@@ -41,27 +41,6 @@ export default function ForceGraph3D({ graphData, onNodeClick, focusNodeId, widt
     return () => clearTimeout(timer);
   }, [graphData.nodes.length]);
 
-  // Programmatic focus: animate camera to a node by ID
-  useEffect(() => {
-    if (!focusNodeId) return;
-    const fg = fgRef.current;
-    if (!fg) return;
-    // The force-graph stores internal nodes with x/y/z positions
-    const internalNodes = fg.graphData?.()?.nodes;
-    if (!internalNodes) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const node = internalNodes.find((n: any) => n.id === focusNodeId);
-    if (!node) return;
-
-    const distance = 200;
-    const distRatio = 1 + distance / Math.hypot(node.x || 0, node.y || 0, node.z || 0);
-    fg.cameraPosition(
-      { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
-      { x: node.x || 0, y: node.y || 0, z: node.z || 0 },
-      1000
-    );
-  }, [focusNodeId]);
-
   const data = useMemo(() => ({
     nodes: graphData.nodes.map(n => ({ ...n })),
     links: graphData.links.map(l => ({
@@ -70,6 +49,49 @@ export default function ForceGraph3D({ graphData, onNodeClick, focusNodeId, widt
       target: typeof l.target === 'object' ? (l.target as unknown as { id: string }).id : l.target,
     })),
   }), [graphData]);
+
+  // Stable ref to the current internal nodes array.
+  // d3-force mutates these objects in-place, adding x/y/z after simulation ticks.
+  // Using a ref (updated synchronously on every render) lets the focus effect
+  // read up-to-date positions without adding `data` as a dep (which would cause
+  // spurious re-runs when the graph changes).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dataNodesRef = useRef<any[]>([]);
+  dataNodesRef.current = data.nodes;
+
+  // Programmatic focus: animate camera to a node by ID
+  useEffect(() => {
+    if (!focusNodeId) return;
+    const fg = fgRef.current;
+    if (!fg?.cameraPosition) return;
+
+    const attempt = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const node = dataNodesRef.current.find((n: any) => n.id === focusNodeId);
+      if (!node) return false;
+
+      const x: number = node.x ?? 0;
+      const y: number = node.y ?? 0;
+      const z: number = node.z ?? 0;
+      const dist = Math.hypot(x, y, z);
+
+      // If still at origin the simulation hasn't run enough ticks yet
+      if (dist < 1) return false;
+
+      const distRatio = 1 + 40 / dist;
+      fg.cameraPosition(
+        { x: x * distRatio, y: y * distRatio, z: z * distRatio },
+        { x, y, z },
+        1000
+      );
+      return true;
+    };
+
+    if (!attempt()) {
+      const timer = setTimeout(attempt, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [focusNodeId]);
 
   // Cache glow textures to avoid recreating canvases every render
   const glowTextureCache = useRef<Map<string, THREE.Texture>>(new Map());

@@ -56,10 +56,15 @@ export default function IntelligencePage() {
     setTranscriptLines(prev => [...prev, { text, timestamp: Date.now() }].slice(-20));
   }, []);
 
-  // Focus graph + open panel for a node
+  // Zoom camera to a node without opening the side panel (used while typing in search)
+  const zoomToNode = useCallback((node: GraphNode) => {
+    setFocusNodeId(null);
+    requestAnimationFrame(() => setFocusNodeId(node.id));
+  }, []);
+
+  // Focus graph + open panel for a node (used on explicit click / Enter)
   const navigateToNode = useCallback((node: GraphNode) => {
     setSelectedNode(node);
-    // Toggle focusNodeId to re-trigger even if same node
     setFocusNodeId(null);
     requestAnimationFrame(() => setFocusNodeId(node.id));
   }, []);
@@ -105,7 +110,7 @@ export default function IntelligencePage() {
             <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
               <div className="flex items-center gap-3 pointer-events-auto">
                 <div className="text-sm font-semibold text-slate-200 font-mono">KNOWLEDGE GRAPH</div>
-                <SearchBar nodes={graphData.nodes} onSelect={navigateToNode} />
+                <SearchBar nodes={graphData.nodes} onSelect={navigateToNode} onZoom={zoomToNode} />
               </div>
               <div className="flex items-center gap-3 pointer-events-auto">
                 <StatsOverlay

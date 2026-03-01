@@ -56,14 +56,6 @@ export default function NavBar({ variant = 'agent' }: { variant?: 'agent' | 'cli
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-text-tertiary cursor-pointer hover:bg-bg-muted transition-colors rounded-sm"
-          style={{ border: '1px solid var(--border)' }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
-          </svg>
-          Search
-        </div>
-
         <div className="flex items-center gap-1 px-2 py-1 rounded-sm" style={{ background: 'var(--green-dim)' }}>
           <div className="w-[5px] h-[5px] rounded-full status-live" style={{ background: 'var(--green)' }} />
           <span className="font-mono text-[10px] font-medium" style={{ color: 'var(--green)' }}>Live</span>

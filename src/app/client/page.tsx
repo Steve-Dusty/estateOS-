@@ -496,15 +496,27 @@ export default function ClientPage() {
       });
       if (!res.ok) throw new Error('Failed to create request');
       const data = await res.json();
-      setAgentRequestId(data.request.id);
-      setAgentStatus('waiting');
+      const req = data.request;
+      setAgentRequestId(req.id);
 
-      // Poll for deployment
+      // Agent is auto-deployed — connect immediately if token is already present
+      if (req.participantToken && req.serverUrl && req.roomName) {
+        setAgentConnection({
+          serverUrl: req.serverUrl,
+          token: req.participantToken,
+          roomName: req.roomName,
+        });
+        setAgentStatus('connected');
+        return;
+      }
+
+      // Fallback: poll in case auto-deploy raced or failed
+      setAgentStatus('waiting');
       const poll = setInterval(async () => {
         try {
           const check = await fetch(`/api/agent-requests?status=deployed`);
           const checkData = await check.json();
-          const deployed = checkData.requests?.find((r: { id: string }) => r.id === data.request.id);
+          const deployed = checkData.requests?.find((r: { id: string }) => r.id === req.id);
           if (deployed && deployed.participantToken) {
             clearInterval(poll);
             setAgentConnection({
@@ -524,10 +536,13 @@ export default function ClientPage() {
 
   const disconnectAgent = useCallback(() => {
     if (agentPollRef.current) clearInterval(agentPollRef.current);
+    if (agentRequestId) {
+      fetch(`/api/agent-requests/${agentRequestId}/end`, { method: 'POST' }).catch(() => {});
+    }
     setAgentStatus('idle');
     setAgentRequestId(null);
     setAgentConnection(null);
-  }, []);
+  }, [agentRequestId]);
 
   // Cleanup poll on unmount
   useEffect(() => {

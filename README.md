@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# EstateOS
 
-## Getting Started
+An AI-powered real estate operating system built for agents and clients. EstateOS combines an interactive property map, 3D environment generation, live video walkthroughs, a real-time knowledge graph, and an AI voice assistant into a single unified platform.
 
-First, run the development server:
+## Overview
+
+**Agent Dashboard** — A command center for real estate agents with an interactive Mapbox property map, portfolio overview, client management, and an AI Intelligence module that builds a live knowledge graph from conversations — tracking persons, topics, and relationships in real time.
+
+**Client Portal** — An immersive experience for buyers and renters featuring:
+- **World Builder** — Generate panoramic and 3D scenes from natural language descriptions of spaces
+- **Odyssey** — Stream live AI-generated video walkthroughs of neighborhoods and properties
+- **Agent Chat** — Connect directly with your agent via voice (LiveKit) for real-time guidance
+
+## Tech Stack
+
+| Category | Technologies |
+|---|---|
+| Framework | Next.js 16, React 19, TypeScript |
+| Styling | Tailwind CSS v4 |
+| 3D / Graphics | Three.js, react-force-graph-3d |
+| Maps | Mapbox GL |
+| Real-time | Socket.IO, LiveKit |
+| AI / LLM | Google Gemini, OpenAI |
+| Voice | ElevenLabs, LiveKit Agents |
+| Video | OdysseyML |
+| Tooling | Composio (email), PDFKit |
+| Database | SQLite (better-sqlite3) |
+| Server | Node.js custom server via tsx |
+
+## Team
+
+- [AnanthKini1](https://github.com/AnanthKini1)
+- [SanjayMarathe](https://github.com/SanjayMarathe)
+
+## How to Run
+
+### Prerequisites
+
+- Node.js 18+
+- API keys for: Google Gemini, OpenAI, LiveKit, ElevenLabs, Mapbox, Composio
+
+### Setup
+
+1. Clone the repository and install dependencies:
+
+```bash
+npm install
+```
+
+2. Create a `.env.local` file in the project root and add your API keys.
+
+3. Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This runs the custom server (`server.ts`) which handles both Next.js and Socket.IO on the same port.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Other Scripts
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run build    # Production build
+npm run start    # Production server
+npm run lint     # Lint the codebase
+npm run seed     # Seed the database with sample data
+```

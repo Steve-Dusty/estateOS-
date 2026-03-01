@@ -1,5 +1,5 @@
 import { Server as SocketIOServer } from 'socket.io';
-import { GraphData, GraphNode, GraphLink } from '@/types/graph';
+import { GraphNode, GraphLink } from '@/types/graph';
 import { buildFullGraph } from './graph-builder';
 import type { AgentRequest } from './agent-requests';
 
@@ -88,6 +88,10 @@ export function broadcastAgentRequest(request: AgentRequest): void {
 
 export function broadcastAgentDeploy(request: AgentRequest): void {
   getIO()?.emit('agent-request:deployed', { request });
+}
+
+export function broadcastAgentEnd(request: AgentRequest): void {
+  getIO()?.emit('agent-request:ended', { request });
 }
 
 export { getIO };
