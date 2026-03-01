@@ -7,6 +7,7 @@ const AGENT_NAV = [
   { label: 'Overview', href: '/' },
   { label: 'Intelligence', href: '/intelligence' },
   { label: 'Reports', href: '/reports' },
+  { label: 'Clients', href: '/clients' },
   { label: 'Portfolio', href: '/portfolio' },
 ];
 

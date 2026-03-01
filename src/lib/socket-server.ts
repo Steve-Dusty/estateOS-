@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { GraphData, GraphNode, GraphLink } from '@/types/graph';
 import { buildFullGraph } from './graph-builder';
+import type { AgentRequest } from './agent-requests';
 
 // Use globalThis to share the Socket.IO instance between the custom server
 // (server.ts) and Next.js API routes (which run in a separate module context).
@@ -79,6 +80,14 @@ export function broadcastTopic(event: {
   timestamp: string;
 }): void {
   getIO()?.emit('topic:new', event);
+}
+
+export function broadcastAgentRequest(request: AgentRequest): void {
+  getIO()?.emit('agent-request:new', { request });
+}
+
+export function broadcastAgentDeploy(request: AgentRequest): void {
+  getIO()?.emit('agent-request:deployed', { request });
 }
 
 export { getIO };

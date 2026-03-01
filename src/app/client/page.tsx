@@ -4,16 +4,19 @@ import React, { useRef, useState, useEffect, useCallback, type MouseEvent as Rea
 import type * as THREE from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { GLTFLoader as GLTFLoaderType } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import dynamic from 'next/dynamic';
 import NavBar from '../components/NavBar';
 import ClientSidebar from '../components/ClientSidebar';
 import StatusBar from '../components/StatusBar';
-import { Property } from '../lib/properties';
+import { Property, formatPrice } from '../lib/properties';
+
+const LiveKitVoice = dynamic(() => import('../components/LiveKitVoice'), { ssr: false });
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type OdysseyClient = any;
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-type ClientMode = 'world' | 'odyssey';
+type ClientMode = 'world' | 'odyssey' | 'agent';
 type StageStatus = 'pending' | 'running' | 'done' | 'error';
 
 interface StageState {
@@ -21,12 +24,12 @@ interface StageState {
   world: StageStatus;
 }
 
-const PLACEHOLDERS: Record<ClientMode, string> = {
+const PLACEHOLDERS: Partial<Record<ClientMode, string>> = {
   world: 'A cozy living room with a stone fireplace, bookshelves, and large windows overlooking a garden…',
   odyssey: 'Walking through a serene Japanese garden courtyard with koi ponds and cherry blossoms…',
 };
 
-const EXAMPLES: Record<ClientMode, { label: string; prompt: string }[]> = {
+const EXAMPLES: Partial<Record<ClientMode, { label: string; prompt: string }[]>> = {
   world: [
     { label: 'Modern Living Room', prompt: 'A modern minimalist living room with white walls, hardwood floors, a large sectional sofa, and floor-to-ceiling windows' },
     { label: 'Rustic Kitchen', prompt: 'A rustic kitchen with exposed brick, hanging copper pots, a butcher-block island, and natural light streaming through a skylight' },
@@ -92,6 +95,12 @@ export default function ClientPage() {
   const odysseyClientRef = useRef<OdysseyClient | null>(null);
   const [odysseyStatus, setOdysseyStatus] = useState<'idle' | 'connecting' | 'connected' | 'streaming' | 'error'>('idle');
   const [odysseyInteraction, setOdysseyInteraction] = useState('');
+
+  // Agent chat state
+  const [agentStatus, setAgentStatus] = useState<'idle' | 'requesting' | 'waiting' | 'connected' | 'error'>('idle');
+  const [agentRequestId, setAgentRequestId] = useState<string | null>(null);
+  const [agentConnection, setAgentConnection] = useState<{ serverUrl: string; token: string; roomName: string } | null>(null);
+  const agentPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Config panel resize state
   const [configH, setConfigH] = useState(80);
@@ -228,6 +237,12 @@ export default function ClientPage() {
       odysseyClientRef.current = null;
       setOdysseyStatus('idle');
       if (odysseyVideoRef.current) odysseyVideoRef.current.srcObject = null;
+    }
+    if (mode === 'agent') {
+      if (agentPollRef.current) clearInterval(agentPollRef.current);
+      setAgentStatus('idle');
+      setAgentRequestId(null);
+      setAgentConnection(null);
     }
     setMode(m);
     setPrompt('');
@@ -461,6 +476,66 @@ export default function ClientPage() {
     if (odysseyVideoRef.current) odysseyVideoRef.current.srcObject = null;
   }, []);
 
+  // ── Agent Chat functions ──────────────────────────────────────────
+  const requestAgent = useCallback(async () => {
+    if (!selectedProperty) return;
+    setAgentStatus('requesting');
+    try {
+      const clientId = `client_${Math.random().toString(36).slice(2, 8)}`;
+      const res = await fetch('/api/agent-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          clientName: 'Client',
+          propertyId: selectedProperty.id,
+          propertyAddress: selectedProperty.address,
+          propertyCity: selectedProperty.city,
+          propertyPrice: selectedProperty.price,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to create request');
+      const data = await res.json();
+      setAgentRequestId(data.request.id);
+      setAgentStatus('waiting');
+
+      // Poll for deployment
+      const poll = setInterval(async () => {
+        try {
+          const check = await fetch(`/api/agent-requests?status=deployed`);
+          const checkData = await check.json();
+          const deployed = checkData.requests?.find((r: { id: string }) => r.id === data.request.id);
+          if (deployed && deployed.participantToken) {
+            clearInterval(poll);
+            setAgentConnection({
+              serverUrl: deployed.serverUrl,
+              token: deployed.participantToken,
+              roomName: deployed.roomName,
+            });
+            setAgentStatus('connected');
+          }
+        } catch { /* keep polling */ }
+      }, 2000);
+      agentPollRef.current = poll;
+    } catch {
+      setAgentStatus('error');
+    }
+  }, [selectedProperty]);
+
+  const disconnectAgent = useCallback(() => {
+    if (agentPollRef.current) clearInterval(agentPollRef.current);
+    setAgentStatus('idle');
+    setAgentRequestId(null);
+    setAgentConnection(null);
+  }, []);
+
+  // Cleanup poll on unmount
+  useEffect(() => {
+    return () => {
+      if (agentPollRef.current) clearInterval(agentPollRef.current);
+    };
+  }, []);
+
   const handleGenerate = useCallback(() => {
     if (mode === 'world') startWorldGen();
     else odysseyConnect();
@@ -496,13 +571,13 @@ export default function ClientPage() {
               <div className="flex items-center gap-2">
                 {/* Mode toggle */}
                 <div className="flex gap-1 shrink-0">
-                  {([['world', '3D', 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'], ['odyssey', 'Tour', 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z']] as const).map(([m, label, path]) => (
+                  {([['world', '3D', 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'], ['odyssey', 'Tour', 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z'], ['agent', 'Agent', 'M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2']] as const).map(([m, label, path]) => (
                     <button key={m} onClick={() => handleModeChange(m as ClientMode)} disabled={generating}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[11px] font-semibold transition-all cursor-pointer"
                       style={{
-                        background: mode === m ? 'var(--accent)' : 'var(--bg-muted)',
+                        background: mode === m ? (m === 'agent' ? '#7c3aed' : 'var(--accent)') : 'var(--bg-muted)',
                         color: mode === m ? 'white' : 'var(--text-secondary)',
-                        border: `1px solid ${mode === m ? 'var(--accent)' : 'var(--border)'}`,
+                        border: `1px solid ${mode === m ? (m === 'agent' ? '#7c3aed' : 'var(--accent)') : 'var(--border)'}`,
                         opacity: generating && mode !== m ? 0.5 : 1,
                       }}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d={path}/></svg>
@@ -511,41 +586,95 @@ export default function ClientPage() {
                   ))}
                 </div>
 
-                {/* Prompt input (single line) */}
-                <input
-                  type="text"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { if (!odysseyLive) handleGenerate(); } }}
-                  placeholder={PLACEHOLDERS[mode]}
-                  className="flex-1 text-[12px] rounded-sm px-3 py-1.5 transition-colors focus:outline-none"
-                  style={{ background: 'var(--bg-body)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontFamily: 'inherit' }}
-                  onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
-                  onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-                />
+                {mode !== 'agent' && (
+                  <>
+                    {/* Prompt input (single line) */}
+                    <input
+                      type="text"
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { if (!odysseyLive) handleGenerate(); } }}
+                      placeholder={PLACEHOLDERS[mode] ?? ''}
+                      className="flex-1 text-[12px] rounded-sm px-3 py-1.5 transition-colors focus:outline-none"
+                      style={{ background: 'var(--bg-body)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontFamily: 'inherit' }}
+                      onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
+                      onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
+                    />
 
-                {/* Generate / End button */}
-                <button
-                  onClick={odysseyLive ? odysseyEnd : handleGenerate}
-                  disabled={!odysseyLive && (generating || !prompt.trim())}
-                  className="px-4 py-1.5 text-[11px] font-semibold transition-all rounded-sm flex items-center gap-1.5 shrink-0 cursor-pointer"
-                  style={{
-                    background: odysseyLive ? 'var(--red)' : (generating || !prompt.trim() ? 'var(--bg-muted)' : 'var(--accent)'),
-                    color: odysseyLive ? 'white' : (generating || !prompt.trim() ? 'var(--text-tertiary)' : 'white'),
-                    opacity: (!odysseyLive && generating) ? 0.6 : 1,
-                    cursor: (!odysseyLive && generating) ? 'not-allowed' : 'pointer',
-                  }}>
-                  {generating && (
-                    <div className="w-3 h-3 rounded-full" style={{ border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'white', animation: 'spin .8s linear infinite' }} />
-                  )}
-                  {generating ? btnLabelActive : btnLabel}
-                </button>
+                    {/* Generate / End button */}
+                    <button
+                      onClick={odysseyLive ? odysseyEnd : handleGenerate}
+                      disabled={!odysseyLive && (generating || !prompt.trim())}
+                      className="px-4 py-1.5 text-[11px] font-semibold transition-all rounded-sm flex items-center gap-1.5 shrink-0 cursor-pointer"
+                      style={{
+                        background: odysseyLive ? 'var(--red)' : (generating || !prompt.trim() ? 'var(--bg-muted)' : 'var(--accent)'),
+                        color: odysseyLive ? 'white' : (generating || !prompt.trim() ? 'var(--text-tertiary)' : 'white'),
+                        opacity: (!odysseyLive && generating) ? 0.6 : 1,
+                        cursor: (!odysseyLive && generating) ? 'not-allowed' : 'pointer',
+                      }}>
+                      {generating && (
+                        <div className="w-3 h-3 rounded-full" style={{ border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'white', animation: 'spin .8s linear infinite' }} />
+                      )}
+                      {generating ? btnLabelActive : btnLabel}
+                    </button>
+                  </>
+                )}
+
+                {mode === 'agent' && (
+                  <>
+                    <span className="text-[11px] text-text-secondary flex-1">
+                      {selectedProperty
+                        ? `${selectedProperty.address}, ${selectedProperty.city} — ${formatPrice(selectedProperty.price)}`
+                        : 'Select a property from the sidebar to start'}
+                    </span>
+                    {agentStatus === 'idle' && (
+                      <button
+                        onClick={requestAgent}
+                        disabled={!selectedProperty}
+                        className="px-4 py-1.5 text-[11px] font-semibold transition-all rounded-sm flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        style={{
+                          background: selectedProperty ? '#7c3aed' : 'var(--bg-muted)',
+                          color: selectedProperty ? 'white' : 'var(--text-tertiary)',
+                        }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        </svg>
+                        Request Agent
+                      </button>
+                    )}
+                    {(agentStatus === 'requesting' || agentStatus === 'waiting') && (
+                      <div className="flex items-center gap-2 px-4 py-1.5">
+                        <div className="w-3 h-3 rounded-full" style={{ border: '2px solid rgba(124,58,237,0.2)', borderTopColor: '#7c3aed', animation: 'spin .8s linear infinite' }} />
+                        <span className="text-[11px] font-semibold" style={{ color: '#a78bfa' }}>
+                          {agentStatus === 'requesting' ? 'Sending request…' : 'Waiting for agent deployment…'}
+                        </span>
+                      </div>
+                    )}
+                    {agentStatus === 'connected' && (
+                      <button
+                        onClick={disconnectAgent}
+                        className="px-4 py-1.5 text-[11px] font-semibold transition-all rounded-sm cursor-pointer"
+                        style={{ background: 'var(--red)', color: 'white' }}>
+                        End Call
+                      </button>
+                    )}
+                    {agentStatus === 'error' && (
+                      <button
+                        onClick={() => setAgentStatus('idle')}
+                        className="px-4 py-1.5 text-[11px] font-semibold transition-all rounded-sm cursor-pointer"
+                        style={{ background: 'var(--bg-muted)', color: 'var(--red)' }}>
+                        Retry
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
 
-              {/* Row 2: Examples + image toggle + progress — compact row */}
-              <div className="flex items-center gap-2 flex-wrap">
+              {/* Row 2: Examples + image toggle + progress — compact row (hidden in agent mode) */}
+              {mode !== 'agent' && <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[9px] text-text-tertiary">Try:</span>
-                {EXAMPLES[mode].map((ex) => (
+                {(EXAMPLES[mode] ?? []).map((ex) => (
                   <button key={ex.label} onClick={() => setPrompt(ex.prompt)}
                     className="px-2 py-0.5 text-[9px] rounded-sm transition-all cursor-pointer"
                     style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}
@@ -603,7 +732,7 @@ export default function ClientPage() {
                     )}
                   </>
                 )}
-              </div>
+              </div>}
             </div>
 
             {/* ── Drag handle to resize config panel ── */}
@@ -614,9 +743,60 @@ export default function ClientPage() {
             />
           </div>
 
+          {/* Agent Chat Area */}
+          {mode === 'agent' && (
+            <div className="flex-1 relative overflow-hidden" style={{ background: 'radial-gradient(ellipse at 50% 60%, #0f1729 0%, var(--bg-body) 70%)' }}>
+              {agentStatus === 'connected' && agentConnection && selectedProperty ? (
+                <LiveKitVoice
+                  property={selectedProperty}
+                  serverUrl={agentConnection.serverUrl}
+                  token={agentConnection.token}
+                  roomName={agentConnection.roomName}
+                  onDisconnect={disconnectAgent}
+                />
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="absolute inset-0 pointer-events-none graph-grid" />
+                  <div className="relative mb-4" style={{ opacity: 0.15, color: '#7c3aed' }}>
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                      <line x1="12" y1="19" x2="12" y2="23"/>
+                      <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                  </div>
+                  {!selectedProperty ? (
+                    <p className="text-[12px] text-text-tertiary text-center leading-relaxed">
+                      Select a property from the sidebar<br />
+                      to start a conversation with an AI agent.
+                    </p>
+                  ) : agentStatus === 'waiting' || agentStatus === 'requesting' ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-8 h-8 rounded-full" style={{ border: '3px solid rgba(124,58,237,0.2)', borderTopColor: '#7c3aed', animation: 'spin 1s linear infinite' }} />
+                      <p className="text-[12px] text-text-tertiary text-center leading-relaxed">
+                        {agentStatus === 'requesting' ? 'Sending request to agent…' : 'Waiting for agent to be deployed…'}
+                        <br />
+                        <span className="font-semibold text-text-secondary">{selectedProperty.address}</span>
+                      </p>
+                    </div>
+                  ) : agentStatus === 'error' ? (
+                    <p className="text-[12px] text-center leading-relaxed" style={{ color: 'var(--red)' }}>
+                      Failed to connect. Please try again.
+                    </p>
+                  ) : (
+                    <p className="text-[12px] text-text-tertiary text-center leading-relaxed">
+                      Click <span className="font-semibold" style={{ color: '#a78bfa' }}>Request Agent</span> above<br />
+                      to start a voice conversation about this property.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 3D Viewer / Odyssey Stream Area */}
           <div className="flex-1 relative overflow-hidden" ref={wrapRef}
-            style={{ background: 'radial-gradient(ellipse at 50% 60%, #0f1729 0%, var(--bg-body) 70%)' }}>
+            style={{ background: 'radial-gradient(ellipse at 50% 60%, #0f1729 0%, var(--bg-body) 70%)', display: mode === 'agent' ? 'none' : undefined }}>
 
             <div className="absolute inset-0 pointer-events-none graph-grid" />
 

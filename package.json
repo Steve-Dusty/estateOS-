@@ -16,6 +16,8 @@
     "@google/genai": "^1.43.0",
     "@google/generative-ai": "^0.24.1",
     "@livekit/components-react": "^2.9.20",
+    "@livekit/components-styles": "^1.2.0",
+    "@livekit/protocol": "^1.44.1",
     "@mapbox/point-geometry": "^1.1.0",
     "@odysseyml/odyssey": "^1.0.0",
     "@types/pdfkit": "^0.17.5",
