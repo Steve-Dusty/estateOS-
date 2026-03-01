@@ -366,10 +366,10 @@ async function sendEmail(
   lastPdfFilename?: string,
   lastImageFilename?: string,
 ): Promise<object> {
-  // 1. Use GPT to extract email fields from user message
+  // 1. Use GPT to extract email fields AND determine which attachments to send
   const attachmentHints = [
-    lastPdfFilename   ? `A PDF report is available for attachment: ${lastPdfFilename}` : '',
-    lastImageFilename ? `A schematic image is available for attachment: ${lastImageFilename}` : '',
+    lastPdfFilename   ? `PDF report available: ${lastPdfFilename}` : '',
+    lastImageFilename ? `Schematic image available: ${lastImageFilename}` : '',
   ].filter(Boolean).join('\n');
 
   const extractionPrompt = `Extract the email details from this user message. The user may or may not provide all fields.
@@ -380,8 +380,14 @@ ${attachmentHints}
 
 User message: ${message}
 
+Also set "attachWhat" based on what the user wants to attach:
+- "pdf"   — user mentions report, PDF, document, or analysis
+- "image" — user mentions schematic, floor plan, image, diagram, or picture
+- "both"  — user mentions both, everything, all files, or sends to multiple
+- "none"  — user does not mention attachments (or there are no files available)
+
 Respond ONLY with JSON:
-{"to": "email@example.com", "subject": "Email subject", "body": "Email body in HTML format"}`;
+{"to": "email@example.com", "subject": "Email subject", "body": "Email body in HTML format", "attachWhat": "pdf|image|both|none"}`;
 
   const resp = await openai.chat.completions.create({
     model: OPENAI_MODEL,
@@ -400,7 +406,7 @@ Respond ONLY with JSON:
   }
   raw = raw.trim();
 
-  const { to, subject, body } = JSON.parse(raw);
+  const { to, subject, body, attachWhat } = JSON.parse(raw);
 
   if (!to) {
     return { type: 'text', message: 'Could not determine the recipient email address. Please specify who to send the email to.' };
@@ -414,41 +420,65 @@ Respond ONLY with JSON:
     // Fallback: if no block was replaced, append the signature
     || `${body}${SIGNATURE_HTML}`;
 
-  // 3. Resolve a single attachment path.
-  //    GMAIL_SEND_EMAIL exposes one `attachment` field (singular) that is
-  //    marked file_uploadable in Composio's schema. The SDK reads the local
-  //    path, uploads the file to S3, and passes the resulting S3 key to
-  //    Gmail — so we just need to hand over an absolute filesystem path.
-  //    Priority: PDF > image (both stored in GENERATED_ASSETS_DIR).
-  function resolveAttachmentPath(filename: string): string | null {
+  // 3. Resolve file paths — GMAIL_SEND_EMAIL's `attachment` field is
+  //    file_uploadable, so we pass an absolute path and the Composio SDK
+  //    uploads it to S3 automatically. The field is singular, so for "both"
+  //    we make two sequential Composio calls.
+  function resolvePath(filename: string): string | null {
     const p = join(GENERATED_ASSETS_DIR, filename);
     return existsSync(p) ? p : null;
   }
 
-  const attachmentPath =
-    (lastPdfFilename   && resolveAttachmentPath(lastPdfFilename))   ||
-    (lastImageFilename && resolveAttachmentPath(lastImageFilename)) ||
-    null;
+  const pdfPath   = lastPdfFilename   ? resolvePath(lastPdfFilename)   : null;
+  const imagePath = lastImageFilename ? resolvePath(lastImageFilename) : null;
 
-  // 4. Send via Composio
-  const result = await composio.tools.execute('GMAIL_SEND_EMAIL', {
-    userId: process.env.COMPOSIO_USER_ID ?? 'default',
-    arguments: {
-      recipient_email: to,
-      subject:         subject ?? 'Property Information from EstateOS',
-      body:            bodyWithSignature,
-      is_html:         true,
-      ...(attachmentPath && { attachment: attachmentPath }),
-    },
-    dangerouslySkipVersionCheck: true,
-  });
+  // Decide what to attach based on GPT's reading of the user's intent.
+  // Fall back to whatever is available when the user didn't specify.
+  type SendSpec = { subjectSuffix: string; attachment: string | null };
+  let specs: SendSpec[];
 
-  if (result.data?.error) {
-    return { type: 'text', message: `Failed to send email: ${result.data.error}` };
+  const want = attachWhat as string | undefined;
+  if (want === 'both') {
+    // One email per file so each has its own proper attachment
+    specs = [
+      { subjectSuffix: ' — Report (PDF)',    attachment: pdfPath },
+      { subjectSuffix: ' — Schematic',       attachment: imagePath },
+    ].filter(s => s.attachment !== null) as SendSpec[];
+    if (specs.length === 0) specs = [{ subjectSuffix: '', attachment: null }];
+  } else if (want === 'image') {
+    specs = [{ subjectSuffix: '', attachment: imagePath }];
+  } else if (want === 'pdf') {
+    specs = [{ subjectSuffix: '', attachment: pdfPath }];
+  } else {
+    // 'none' or unrecognised — attach whatever is available, PDF preferred
+    specs = [{ subjectSuffix: '', attachment: pdfPath ?? imagePath ?? null }];
   }
 
-  const attachedNote = attachmentPath ? ' with 1 attachment' : '';
-  return { type: 'text', message: `Email sent successfully to ${to}${attachedNote}!\n\nSubject: ${subject}` };
+  // 4. Send one email per spec
+  const baseSubject = subject ?? 'Property Information from EstateOS';
+  for (const spec of specs) {
+    const result = await composio.tools.execute('GMAIL_SEND_EMAIL', {
+      userId: process.env.COMPOSIO_USER_ID ?? 'default',
+      arguments: {
+        recipient_email: to,
+        subject:         baseSubject + spec.subjectSuffix,
+        body:            bodyWithSignature,
+        is_html:         true,
+        ...(spec.attachment && { attachment: spec.attachment }),
+      },
+      dangerouslySkipVersionCheck: true,
+    });
+
+    if (result.data?.error) {
+      return { type: 'text', message: `Failed to send email: ${result.data.error}` };
+    }
+  }
+
+  const attachedCount = specs.filter(s => s.attachment).length;
+  const attachNote    = attachedCount > 0
+    ? ` with ${attachedCount} attachment${attachedCount > 1 ? 's (sent as separate emails)' : ''}`
+    : '';
+  return { type: 'text', message: `${specs.length > 1 ? 'Emails' : 'Email'} sent successfully to ${to}${attachNote}!\n\nSubject: ${baseSubject}` };
 }
 
 export async function POST(request: NextRequest) {
