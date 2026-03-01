@@ -31,6 +31,7 @@ An AI-powered real estate operating system built for agents and clients. EstateO
 
 - [AnanthKini1](https://github.com/AnanthKini1)
 - [SanjayMarathe](https://github.com/SanjayMarathe)
+- [Steve-Dusty](https://github.com/Steve-Dusty)
 
 ## How to Run
 
